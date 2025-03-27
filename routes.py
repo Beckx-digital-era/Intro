@@ -101,24 +101,46 @@ def create_pipeline():
     """Create a pipeline in GitLab for a specific project."""
     try:
         data = request.json
-        project_id = data.get('project_id')
+        gitlab_project_id = data.get('project_id')
         branch = data.get('branch', 'main')
         
-        if not project_id:
+        if not gitlab_project_id:
             return jsonify({'error': 'Project ID is required'}), 400
         
-        result = create_gitlab_pipeline(project_id, branch)
+        # Check if the GitLab project exists in our database
+        project = Project.query.filter_by(gitlab_project_id=str(gitlab_project_id)).first()
         
-        # Record the action
+        # If the project doesn't exist in our database, create it
+        if not project:
+            project = Project(
+                name=f'GitLab Project {gitlab_project_id}',
+                description='Project automatically added from GitLab integration',
+                gitlab_project_id=str(gitlab_project_id),
+                user_id=1  # Default user ID
+            )
+            db.session.add(project)
+            db.session.commit()
+            logger.info(f"Created new project record for GitLab project {gitlab_project_id}")
+        
+        # Now create the pipeline via API
+        result = create_gitlab_pipeline(gitlab_project_id, branch)
+        
+        # Record the action with the correct project_id (from our database)
         action = Action(
             action_type='pipeline_creation',
-            description=f'Created pipeline for project {project_id} on branch {branch}',
+            description=f'Created pipeline for GitLab project {gitlab_project_id} on branch {branch}',
             status='completed',
-            project_id=project_id,
-            user_id=1  # Default user ID for now
+            project_id=project.id,  # Use our database ID, not the GitLab project ID
+            user_id=1  # Default user ID
         )
         db.session.add(action)
         db.session.commit()
+        
+        # Add GitHub Actions integration message
+        result['github_actions_control'] = {
+            'status': 'enabled',
+            'message': 'This GitLab pipeline is controlled by GitHub Actions'
+        }
         
         return jsonify(result)
     
