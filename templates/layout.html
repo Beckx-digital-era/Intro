@@ -42,8 +42,19 @@
                     <li class="nav-item">
                         <a class="nav-link" href="#actions-section">Actions</a>
                     </li>
+                    <li class="nav-item admin-only d-none">
+                        <a class="nav-link text-danger" href="/terminal">
+                            <i class="fas fa-terminal me-1"></i>Terminal
+                        </a>
+                    </li>
                 </ul>
                 <div class="d-flex">
+                    <div class="input-group me-2">
+                        <input type="password" id="admin-key" class="form-control form-control-sm" placeholder="Admin Key" aria-label="Admin Key">
+                        <button id="admin-login-btn" class="btn btn-sm btn-primary" type="button">
+                            <i class="fas fa-key"></i>
+                        </button>
+                    </div>
                     <a href="https://github.com/settings/tokens" target="_blank" class="btn btn-outline-light me-2" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Manage GitHub Tokens">
                         <i class="fab fa-github"></i> Tokens
                     </a>
@@ -103,6 +114,122 @@
     <script src="{{ url_for('static', filename='js/gitlab-integration.js') }}"></script>
     <script src="{{ url_for('static', filename='js/github-integration.js') }}"></script>
     <script src="{{ url_for('static', filename='js/beckx-integration.js') }}"></script>
+    
+    <!-- Admin Key Login Script -->
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const adminKeyInput = document.getElementById('admin-key');
+        const adminLoginBtn = document.getElementById('admin-login-btn');
+        
+        function showToast(title, message, type = 'info') {
+            const toastId = 'toast-' + Date.now();
+            const toastHTML = `
+                <div id="${toastId}" class="toast align-items-center border-0 text-white bg-${type}" role="alert" aria-live="assertive" aria-atomic="true">
+                    <div class="d-flex">
+                        <div class="toast-body">
+                            <strong>${title}</strong>: ${message}
+                        </div>
+                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('toast-container').insertAdjacentHTML('beforeend', toastHTML);
+            const toastElement = document.getElementById(toastId);
+            const toast = new bootstrap.Toast(toastElement, { autohide: true, delay: 5000 });
+            toast.show();
+            
+            // Remove toast element after it's hidden to prevent accumulation
+            toastElement.addEventListener('hidden.bs.toast', function() {
+                toastElement.remove();
+            });
+        }
+        
+        function handleAdminLogin() {
+            const adminKey = adminKeyInput.value.trim();
+            
+            if (adminKey === 'Meeki') {
+                // Send admin key to server
+                fetch('/admin-login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `admin_key=${encodeURIComponent(adminKey)}`
+                })
+                .then(response => {
+                    if (response.redirected) {
+                        // Successful login - server will redirect to index
+                        window.location.href = response.url;
+                    } else if (response.ok) {
+                        // Set an admin flag in localStorage
+                        localStorage.setItem('isAdmin', 'true');
+                        
+                        // Show success message
+                        showToast('Success', 'Admin access granted!', 'success');
+                        
+                        // Enable admin-only features
+                        document.querySelectorAll('.admin-only').forEach(element => {
+                            element.classList.remove('d-none');
+                        });
+                        
+                        // Add admin badge next to navbar brand
+                        const navbarBrand = document.querySelector('.navbar-brand');
+                        if (!document.querySelector('.admin-badge')) {
+                            navbarBrand.insertAdjacentHTML('beforeend', '<span class="badge bg-danger ms-2 admin-badge">Admin</span>');
+                        }
+                    } else {
+                        // Show error message
+                        showToast('Error', 'Server rejected admin key', 'danger');
+                    }
+                })
+                .catch(error => {
+                    console.error('Admin login error:', error);
+                    showToast('Error', 'Failed to authenticate admin key', 'danger');
+                })
+                .finally(() => {
+                    // Clear the input
+                    adminKeyInput.value = '';
+                });
+                
+                // Redirect to terminal if "Meeki terminal" is entered
+                if (adminKey === 'Meeki terminal') {
+                    window.location.href = '/terminal';
+                }
+            } else {
+                // Show error message for invalid key format
+                showToast('Error', 'Invalid admin key', 'danger');
+                
+                // Clear the input
+                adminKeyInput.value = '';
+            }
+        }
+        
+        // Check if user is already admin (from previous login)
+        if (localStorage.getItem('isAdmin') === 'true') {
+            // Enable admin-only features
+            document.querySelectorAll('.admin-only').forEach(element => {
+                element.classList.remove('d-none');
+            });
+            
+            // Add admin badge next to navbar brand
+            const navbarBrand = document.querySelector('.navbar-brand');
+            if (!document.querySelector('.admin-badge')) {
+                navbarBrand.insertAdjacentHTML('beforeend', '<span class="badge bg-danger ms-2 admin-badge">Admin</span>');
+            }
+        }
+        
+        // Add event listeners
+        adminLoginBtn.addEventListener('click', handleAdminLogin);
+        
+        adminKeyInput.addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                handleAdminLogin();
+            }
+        });
+    });
+    </script>
     
     {% block scripts %}{% endblock %}
 </body>

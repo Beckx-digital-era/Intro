@@ -46,6 +46,36 @@ def login():
             flash('Invalid username or password')
     
     return render_template('login.html')
+    
+@app.route('/admin-login', methods=['POST'])
+def admin_login():
+    """Admin login with a special key."""
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+        
+    admin_key = request.form.get('admin_key')
+    
+    # Check if the admin key is correct (hard-coded "Meeki")
+    if admin_key == "Meeki":
+        # Look for an admin user
+        admin = User.query.filter_by(is_admin=True).first()
+        
+        # If no admin user exists, create one
+        if not admin:
+            admin = User(
+                username="admin",
+                email="admin@devops.system",
+                is_admin=True
+            )
+            admin.set_password("Meeki")  # Set the admin password to match the key
+            db.session.add(admin)
+            db.session.commit()
+        
+        login_user(admin)
+        return redirect(url_for('index'))
+    else:
+        flash('Invalid admin key')
+        return redirect(url_for('login'))
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -102,13 +132,24 @@ def index():
 @app.route('/terminal')
 @login_required
 def terminal():
-    """Render the terminal interface page."""
+    """Render the terminal interface page (admin only)."""
+    # Check if the user is an admin
+    if not hasattr(current_user, 'is_admin') or not current_user.is_admin:
+        flash('Access denied. Admin privileges required.', 'danger')
+        return redirect(url_for('index'))
+        
     return render_template('terminal.html')
     
 @app.route('/api/terminal/execute', methods=['POST'])
 @login_required
 def execute_command():
-    """Execute a command in the terminal and return the result."""
+    """Execute a command in the terminal and return the result (admin only)."""
+    # Check if the user is an admin
+    if not hasattr(current_user, 'is_admin') or not current_user.is_admin:
+        return jsonify({
+            'output': 'Access denied. Admin privileges required.',
+            'error': True
+        }), 403
     try:
         data = request.json
         command = data.get('command', '')

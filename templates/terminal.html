@@ -15,22 +15,24 @@
                     </a>
                 </div>
             </div>
-            <div class="card-body bg-dark p-0">
-                <div id="terminal-container" class="p-3" style="min-height: 400px; max-height: 600px; overflow-y: auto; color: #4af626; font-family: 'Courier New', monospace; background-color: #0c0c0c;">
+            <div class="card-body bg-darker p-0">
+                <div id="terminal-container" class="p-3" style="min-height: 400px; max-height: 600px; overflow-y: auto; font-family: 'Courier New', monospace;">
                     <div class="terminal-output">
                         <div class="text-warning">Welcome to AI-Powered DevOps Terminal!</div>
-                        <div class="text-info">This terminal has controlled access to server operations.</div>
+                        <div style="color: var(--neon-purple);">This terminal has controlled access to server operations.</div>
                         <div class="text-success">Type 'help' for a list of available commands.</div>
-                        <div class="text-light">-----------------------------------------------</div>
+                        <div style="color: var(--neon-cyan);">-----------------------------------------------</div>
                     </div>
                 </div>
-                <div class="terminal-input-area p-2 border-top border-secondary">
+                <div class="terminal-input-area p-2">
                     <div class="input-group">
-                        <span class="input-group-text bg-dark text-light border-0">
-                            <i class="fas fa-greater-than"></i>
+                        <span class="input-group-text bg-darker text-info border-0">
+                            <i class="fas fa-terminal"></i>
                         </span>
-                        <input type="text" id="terminal-input" class="form-control bg-dark text-light border-0" placeholder="Enter command...">
-                        <button id="execute-command" class="btn btn-success">Execute</button>
+                        <input type="text" id="terminal-input" class="form-control bg-darker border-0" placeholder="Enter command...">
+                        <button id="execute-command" class="btn btn-primary">
+                            <i class="fas fa-play me-1"></i>Execute
+                        </button>
                     </div>
                 </div>
             </div>
@@ -96,12 +98,12 @@ document.addEventListener('DOMContentLoaded', function() {
         const outputElement = document.createElement('div');
         
         if (isCommand) {
-            outputElement.innerHTML = `<span class="text-primary">$ </span>${text}`;
+            outputElement.innerHTML = `<span style="color: var(--neon-purple);">$ </span><span style="color: var(--neon-cyan);">${text}</span>`;
         } else if (isError) {
-            outputElement.className = 'text-danger';
+            outputElement.style.color = 'var(--neon-pink)';
             outputElement.textContent = text;
         } else {
-            outputElement.className = 'text-light';
+            outputElement.style.color = 'var(--neon-blue)';
             outputElement.innerHTML = text.replace(/\n/g, '<br>');
         }
         
