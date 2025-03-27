@@ -6,6 +6,14 @@ on:
   pull_request:
     branches: [ main ]
   workflow_dispatch:
+    inputs:
+      target_branch:
+        description: 'Target branch for deployment'
+        required: true
+        default: 'main'
+        type: choice
+        options:
+          - main
 
 jobs:
   build-and-test:
@@ -138,6 +146,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "Synchronizing with GitLab..."
+          # Determine branch to use (default is main)
+          TARGET_BRANCH="${{ github.event.inputs.target_branch || 'main' }}"
+          echo "Target branch: $TARGET_BRANCH"
           
           # Get GitLab projects 
           echo "Getting GitLab projects..."
@@ -167,19 +178,23 @@ jobs:
             
             # Update GitLab CI/CD configuration
             echo "Updating GitLab CI/CD configuration..."
-            python gitlab_controller.py --action setup-ci-cd --project-id $PROJECT_ID
+            python gitlab_controller.py --action setup-ci-cd --project-id $PROJECT_ID --ref $TARGET_BRANCH
             
             # Set up GitLab Pages
             echo "Setting up GitLab Pages..."
-            python gitlab_controller.py --action setup-pages --project-id $PROJECT_ID
+            python gitlab_controller.py --action setup-pages --project-id $PROJECT_ID --ref $TARGET_BRANCH
             
             # Sync GitHub repository with GitLab
             echo "Syncing GitHub repository to GitLab..."
-            python gitlab_controller.py --action sync-github-repo --project-id $PROJECT_ID --github-repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME"
+            python gitlab_controller.py --action sync-github-repo --project-id $PROJECT_ID --github-repo "$GITHUB_REPOSITORY" --ref $TARGET_BRANCH
             
             # Trigger GitLab pipeline
             echo "Triggering GitLab pipeline..."
-            python gitlab_controller.py --action trigger-pipeline --project-id $PROJECT_ID --ref main
+            python gitlab_controller.py --action trigger-pipeline --project-id $PROJECT_ID --ref $TARGET_BRANCH
+            
+            # Log success message
+            echo "GitLab pipeline triggered successfully on branch $TARGET_BRANCH."
+            echo "GitHub Actions is now controlling all GitLab operations."
           else
             echo "No GitLab projects found or could not create project."
             exit 1
