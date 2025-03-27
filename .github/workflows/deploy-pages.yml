@@ -24,6 +24,9 @@ jobs:
         
       - name: Setup Pages
         uses: actions/configure-pages@v3
+        with:
+          # Configure custom domain
+          custom_domain: HeyMeekiCo.com
         
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -66,6 +69,9 @@ jobs:
         run: |
           mkdir -p gh-pages
           
+          # Create CNAME file for custom domain
+          echo "HeyMeekiCo.com" > gh-pages/CNAME
+          
           # If we don't have the control interface from the GitLab controller workflow,
           # create a basic one here as a fallback
           if [[ "$INTERFACE_FOUND" != "true" ]]; then
@@ -75,7 +81,7 @@ jobs:
             <!DOCTYPE html>
             <html data-bs-theme="dark">
             <head>
-              <title>DevOps AI - GitHub Control Interface</title>
+              <title>HeyMeekiCo DevOps AI - GitHub Control Interface</title>
               <meta charset="utf-8">
               <meta name="viewport" content="width=device-width, initial-scale=1">
               <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
@@ -92,7 +98,7 @@ jobs:
             <body>
               <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
                 <div class="container">
-                  <a class="navbar-brand" href="#">DevOps AI Control Interface</a>
+                  <a class="navbar-brand" href="#">HeyMeekiCo DevOps AI Control Interface</a>
                   <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                     <span class="navbar-toggler-icon"></span>
                   </button>

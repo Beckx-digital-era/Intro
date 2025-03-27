@@ -91,10 +91,23 @@ def gitlab_projects():
     """Retrieve projects from GitLab using the stored API token."""
     try:
         projects = get_gitlab_projects()
+        
+        # Check if there was an error returned from the API call
+        if isinstance(projects, dict) and projects.get("status") == "error":
+            error_message = projects.get("message", "Unknown GitLab API error")
+            logger.error(f"GitLab API error: {error_message}")
+            return jsonify({
+                'error': error_message,
+                'needs_token_update': 'token is invalid' in error_message.lower() or 'token is expired' in error_message.lower()
+            }), 401
+        
         return jsonify({'projects': projects})
     except Exception as e:
         logger.error(f"Error fetching GitLab projects: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({
+            'error': str(e),
+            'needs_token_update': 'token' in str(e).lower() or 'unauthorized' in str(e).lower() or '401' in str(e)
+        }), 500
 
 @app.route('/api/gitlab/pipeline', methods=['POST'])
 def create_pipeline():
@@ -125,7 +138,26 @@ def create_pipeline():
         # Now create the pipeline via API
         result = create_gitlab_pipeline(gitlab_project_id, branch)
         
-        # Record the action with the correct project_id (from our database)
+        # Check if there was an error returned from the API call
+        if isinstance(result, dict) and result.get("status") == "error":
+            error_message = result.get("message", "Unknown GitLab API error")
+            logger.error(f"GitLab API error when creating pipeline: {error_message}")
+            action = Action(
+                action_type='pipeline_creation',
+                description=f'Failed to create pipeline for GitLab project {gitlab_project_id}: {error_message}',
+                status='failed',
+                project_id=project.id,
+                user_id=1  # Default user ID
+            )
+            db.session.add(action)
+            db.session.commit()
+            
+            return jsonify({
+                'error': error_message,
+                'needs_token_update': 'token is invalid' in error_message.lower() or 'token is expired' in error_message.lower()
+            }), 401
+        
+        # Record the successful action with the correct project_id (from our database)
         action = Action(
             action_type='pipeline_creation',
             description=f'Created pipeline for GitLab project {gitlab_project_id} on branch {branch}',
@@ -137,16 +169,30 @@ def create_pipeline():
         db.session.commit()
         
         # Add GitHub Actions integration message
-        result['github_actions_control'] = {
-            'status': 'enabled',
-            'message': 'This GitLab pipeline is controlled by GitHub Actions'
-        }
+        if isinstance(result, dict):
+            result['github_actions_control'] = {
+                'status': 'enabled',
+                'message': 'This GitLab pipeline is controlled by GitHub Actions'
+            }
+        else:
+            # Handle unexpected result format
+            result = {
+                'status': 'success',
+                'message': 'Pipeline creation initiated',
+                'github_actions_control': {
+                    'status': 'enabled',
+                    'message': 'This GitLab pipeline is controlled by GitHub Actions'
+                }
+            }
         
         return jsonify(result)
     
     except Exception as e:
         logger.error(f"Error creating GitLab pipeline: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({
+            'error': str(e),
+            'needs_token_update': 'token' in str(e).lower() or 'unauthorized' in str(e).lower() or '401' in str(e)
+        }), 500
 
 @app.route('/api/github/repositories')
 def github_repositories():
