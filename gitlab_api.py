@@ -57,11 +57,16 @@ def make_gitlab_request(endpoint, method="GET", data=None, params=None):
             raise ValueError(f"Unsupported HTTP method: {method}")
         
         response.raise_for_status()
+        
+        # Handle responses without JSON content
+        if response.status_code == 204 or not response.text.strip():
+            return {"status": "success", "status_code": response.status_code}
+        
         return response.json()
     
     except requests.exceptions.RequestException as e:
         logger.error(f"GitLab API request failed: {str(e)}")
-        if hasattr(e, 'response') and hasattr(e.response, 'text'):
+        if hasattr(e, 'response') and e.response is not None and hasattr(e.response, 'text'):
             logger.error(f"Response content: {e.response.text}")
         raise
 
