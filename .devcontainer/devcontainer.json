@@ -1,0 +1,33 @@
+{
+  "name": "DevOps AI System",
+  "image": "mcr.microsoft.com/devcontainers/python:3.10",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "lts"
+    },
+    "ghcr.io/devcontainers/features/git:1": {
+      "version": "latest"
+    }
+  },
+  "postCreateCommand": "pip install scikit-learn flask flask-sqlalchemy spacy pytest && python -m spacy download en_core_web_sm",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-azuretools.vscode-docker",
+        "github.copilot",
+        "github.vscode-github-actions",
+        "eamodio.gitlens"
+      ],
+      "settings": {
+        "python.linting.enabled": true,
+        "python.linting.pylintEnabled": true,
+        "python.formatting.provider": "black",
+        "editor.formatOnSave": true
+      }
+    }
+  },
+  "forwardPorts": [5000],
+  "remoteUser": "vscode"
+}
