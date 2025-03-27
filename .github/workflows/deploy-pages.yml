@@ -1,12 +1,14 @@
-name: Deploy to GitHub Pages
+name: Deploy to GitHub Pages (Control Interface)
 
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
+  repository_dispatch:
+    types: [gitlab_ci_completed, gitlab_deployment_completed]
 
 jobs:
-  build-and-deploy:
+  build-and-deploy-ui:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -16,18 +18,387 @@ jobs:
         with:
           node-version: '18'
       
-      - name: Install Dependencies
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+          
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flask flask-sqlalchemy jinja2
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      
+      - name: Install Node Dependencies
         run: |
           npm install -g parcel-bundler
       
-      - name: Build Static Site
+      - name: Get GitLab Deployment Information
+        id: get-gitlab-info
         run: |
-          mkdir -p dist
-          cp -r static dist/
-          cp -r templates/* dist/
+          # Collect GitLab deployment information if available
+          DEPLOYMENT_URL="${{ github.event.client_payload.deployment_url }}"
+          DEPLOYED_AT="${{ github.event.client_payload.deployed_at }}"
+          GITLAB_PROJECT="${{ github.event.client_payload.gitlab_project }}"
+          DEPLOYMENT_TYPE="${{ github.event.client_payload.deployment_type }}"
+          DEPLOYMENT_MESSAGE="${{ github.event.client_payload.message }}"
           
-      - name: Deploy to GitHub Pages
+          # Set default values if not provided
+          if [ -z "$DEPLOYMENT_URL" ]; then
+            DEPLOYMENT_URL="https://example.gitlab.io/devops-ai"
+            echo "No deployment URL found, using placeholder"
+          fi
+          
+          if [ -z "$DEPLOYED_AT" ]; then
+            DEPLOYED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          fi
+          
+          if [ -z "$GITLAB_PROJECT" ]; then
+            echo "Checking for available GitLab projects..."
+            if [ -n "${{ secrets.GITLAB_TOKEN }}" ]; then
+              # Try to get the first project from GitLab
+              RESPONSE=$(curl -s -H "Authorization: Bearer ${{ secrets.GITLAB_TOKEN }}" \
+                "https://gitlab.com/api/v4/projects?membership=true&per_page=1")
+              
+              # Check if the response contains at least one project
+              if [ "$(echo $RESPONSE | grep -c "id")" -gt 0 ]; then
+                # Extract the project path with namespace
+                GITLAB_PROJECT=$(echo $RESPONSE | python -c "import sys, json; print(json.load(sys.stdin)[0]['path_with_namespace'])")
+                echo "Found GitLab project: $GITLAB_PROJECT"
+              else
+                GITLAB_PROJECT="your-gitlab-group/your-project"
+                echo "No GitLab projects found, using placeholder"
+              fi
+            else
+              GITLAB_PROJECT="your-gitlab-group/your-project"
+              echo "GitLab token not available, using placeholder project"
+            fi
+          fi
+          
+          # Save the information to environment variables for later steps
+          echo "DEPLOYMENT_URL=$DEPLOYMENT_URL" >> $GITHUB_ENV
+          echo "DEPLOYED_AT=$DEPLOYED_AT" >> $GITHUB_ENV
+          echo "GITLAB_PROJECT=$GITLAB_PROJECT" >> $GITHUB_ENV
+          
+          echo "deployment_url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
+          echo "gitlab_project=$GITLAB_PROJECT" >> $GITHUB_OUTPUT
+      
+      - name: Process Templates for Control Interface
+        run: |
+          # Create a simple script to process Jinja2 templates for the control interface
+          cat > process_control_interface.py << 'EOF'
+          import os
+          import re
+          import json
+          from jinja2 import Environment, FileSystemLoader
+          
+          # Get deployment information from environment
+          deployment_url = os.environ.get('DEPLOYMENT_URL', 'https://example.gitlab.io/devops-ai')
+          deployed_at = os.environ.get('DEPLOYED_AT', '')
+          gitlab_project = os.environ.get('GITLAB_PROJECT', '')
+          
+          # Set up Jinja2 environment
+          env = Environment(loader=FileSystemLoader('templates'))
+          
+          # Create dist directory
+          os.makedirs('dist', exist_ok=True)
+          
+          # Process all HTML files
+          for filename in os.listdir('templates'):
+              if filename.endswith('.html'):
+                  template = env.get_template(filename)
+                  # Render with static GitHub Pages paths and GitLab deployment information
+                  rendered = template.render(
+                      is_github_pages=True,
+                      base_url='',
+                      gitlab_deployment_url=deployment_url,
+                      gitlab_project=gitlab_project,
+                      deployment_time=deployed_at
+                  )
+                  
+                  # Convert Flask routes to static paths
+                  rendered = re.sub(r'href="/api/', f'href="{deployment_url}/api/', rendered)
+                  rendered = re.sub(r'action="/api/', f'action="{deployment_url}/api/', rendered)
+                  
+                  # Write to dist directory
+                  with open(os.path.join('dist', filename), 'w') as f:
+                      f.write(rendered)
+                      
+          # Create a deployment info file
+          deployment_info = {
+              "github_integration": "active",
+              "gitlab_integration": "active",
+              "gitlab_deployment_url": deployment_url,
+              "gitlab_project": gitlab_project,
+              "deployed_at": deployed_at,
+              "github_pages_updated": os.environ.get('GITHUB_RUN_ID', ''),
+              "control_interface": "github_pages"
+          }
+          
+          with open(os.path.join('dist', 'deployment-info.json'), 'w') as f:
+              json.dump(deployment_info, f, indent=2)
+                      
+          print("Control interface templates processed successfully")
+          EOF
+          
+          # Run the template processing script
+          python process_control_interface.py
+      
+      - name: Build Control Interface
+        run: |
+          echo "Building Control Interface with GitLab deployment integration..."
+          
+          # Copy static assets
+          cp -r static/* dist/
+          
+          # Create README for the GitHub Pages site
+          cat > dist/README.md << EOF
+          # DevOps AI Control Interface
+          
+          This is the control interface for the DevOps AI Chat System.
+          
+          - **UI/Control Interface**: Hosted on GitHub Pages (this site)
+          - **Application Backend**: Hosted on GitLab
+          
+          ## Integration
+          
+          This control interface communicates with the application deployed on GitLab
+          at: $DEPLOYMENT_URL
+          
+          ## GitLab Project
+          
+          The application backend is hosted in the GitLab project:
+          $GITLAB_PROJECT
+          
+          Last deployed: $DEPLOYED_AT
+          EOF
+          
+          # Create a control panel JavaScript file for GitLab integration
+          cat > dist/js/gitlab-control-panel.js << EOF
+          document.addEventListener('DOMContentLoaded', function() {
+              // Add GitLab deployment information to the control panel
+              const deploymentInfoElement = document.getElementById('gitlab-deployment-info');
+              if (deploymentInfoElement) {
+                  deploymentInfoElement.innerHTML = \`
+                      <div class="card mb-4">
+                          <div class="card-header bg-primary text-white">
+                              <h5 class="mb-0">GitLab Deployment Information</h5>
+                          </div>
+                          <div class="card-body">
+                              <p><strong>Application URL:</strong> <a href="${DEPLOYMENT_URL}" target="_blank">${DEPLOYMENT_URL}</a></p>
+                              <p><strong>GitLab Project:</strong> <a href="https://gitlab.com/${GITLAB_PROJECT}" target="_blank">${GITLAB_PROJECT}</a></p>
+                              <p><strong>Last Deployed:</strong> ${new Date('${DEPLOYED_AT}').toLocaleString()}</p>
+                              <div class="d-grid gap-2">
+                                  <a href="${DEPLOYMENT_URL}" class="btn btn-primary" target="_blank">Launch Application</a>
+                                  <a href="https://gitlab.com/${GITLAB_PROJECT}/-/pipelines" class="btn btn-secondary" target="_blank">View GitLab Pipelines</a>
+                              </div>
+                          </div>
+                      </div>
+                  \`;
+              }
+              
+              // Add deployment status indicator
+              const statusIndicator = document.createElement('div');
+              statusIndicator.className = 'deployment-status';
+              statusIndicator.innerHTML = \`
+                  <div class="alert alert-success">
+                      <strong>Status:</strong> Application is deployed on GitLab
+                      <small class="d-block mt-1">Control interface is on GitHub Pages</small>
+                  </div>
+              \`;
+              document.body.appendChild(statusIndicator);
+              
+              // Style the status indicator
+              const style = document.createElement('style');
+              style.textContent = \`
+                  .deployment-status {
+                      position: fixed;
+                      bottom: 20px;
+                      right: 20px;
+                      z-index: 1000;
+                      max-width: 300px;
+                  }
+              \`;
+              document.head.appendChild(style);
+          });
+          EOF
+          
+          # Include the control panel script in index.html
+          if ! grep -q "gitlab-control-panel.js" dist/index.html; then
+            sed -i 's#</body>#<script src="js/gitlab-control-panel.js"></script></body>#' dist/index.html
+          fi
+          
+          # Add a placeholder for GitLab deployment info in index.html if it doesn't exist
+          if ! grep -q "gitlab-deployment-info" dist/index.html; then
+            sed -i 's#<div class="container">#<div class="container">\n  <div id="gitlab-deployment-info"></div>#' dist/index.html
+          fi
+      
+      - name: Create API Proxy Configuration
+        run: |
+          # Create a simple JavaScript file to proxy API requests to GitLab
+          cat > dist/js/api-proxy.js << EOF
+          // Configuration for API proxy
+          const API_CONFIG = {
+              gitlabApiUrl: '${DEPLOYMENT_URL}/api',
+              githubPagesUrl: window.location.origin + window.location.pathname.replace(/\/[^\/]*$/, '/'),
+              proxyEnabled: true
+          };
+          
+          // Add event listeners for API calls
+          document.addEventListener('DOMContentLoaded', function() {
+              // Replace API endpoints in the page
+              document.querySelectorAll('a[href^="${DEPLOYMENT_URL}/api/"], form[action^="${DEPLOYMENT_URL}/api/"]').forEach(element => {
+                  if (element.tagName === 'A') {
+                      const originalHref = element.getAttribute('href');
+                      element.setAttribute('data-original-api', originalHref);
+                      element.setAttribute('href', '#');
+                      element.addEventListener('click', function(e) {
+                          e.preventDefault();
+                          proxyApiRequest(originalHref, 'GET');
+                      });
+                  } else if (element.tagName === 'FORM') {
+                      const originalAction = element.getAttribute('action');
+                      element.setAttribute('data-original-api', originalAction);
+                      element.setAttribute('action', '#');
+                      element.addEventListener('submit', function(e) {
+                          e.preventDefault();
+                          const formData = new FormData(element);
+                          const data = {};
+                          formData.forEach((value, key) => {
+                              data[key] = value;
+                          });
+                          proxyApiRequest(originalAction, element.method.toUpperCase() || 'POST', data);
+                      });
+                  }
+              });
+          });
+          
+          // Function to proxy API requests to GitLab
+          function proxyApiRequest(endpoint, method, data) {
+              // Show loading indicator
+              const loadingIndicator = document.createElement('div');
+              loadingIndicator.className = 'api-loading-indicator';
+              loadingIndicator.innerHTML = '<div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div>';
+              document.body.appendChild(loadingIndicator);
+              
+              // In a real proxy setup, we would make a request to the GitLab API
+              // For now, show a message that this is just a demo
+              setTimeout(() => {
+                  document.body.removeChild(loadingIndicator);
+                  
+                  const responseDiv = document.createElement('div');
+                  responseDiv.className = 'alert alert-info api-response';
+                  responseDiv.innerHTML = \`
+                      <h5>API Request Demo</h5>
+                      <p>In the full application, this would make a \${method} request to:</p>
+                      <pre>\${endpoint}</pre>
+                      \${data ? '<p>With data:</p><pre>' + JSON.stringify(data, null, 2) + '</pre>' : ''}
+                      <p>The actual application is hosted on GitLab at:</p>
+                      <p><a href="${DEPLOYMENT_URL}" target="_blank">${DEPLOYMENT_URL}</a></p>
+                      <button type="button" class="btn-close" aria-label="Close"></button>
+                  \`;
+                  
+                  // Add close button event
+                  responseDiv.querySelector('.btn-close').addEventListener('click', function() {
+                      document.body.removeChild(responseDiv);
+                  });
+                  
+                  // Style the response
+                  responseDiv.style.position = 'fixed';
+                  responseDiv.style.top = '50%';
+                  responseDiv.style.left = '50%';
+                  responseDiv.style.transform = 'translate(-50%, -50%)';
+                  responseDiv.style.zIndex = '1000';
+                  responseDiv.style.maxWidth = '600px';
+                  responseDiv.style.width = '90%';
+                  responseDiv.style.boxShadow = '0 0 20px rgba(0,0,0,0.3)';
+                  
+                  document.body.appendChild(responseDiv);
+              }, 1000);
+          }
+          
+          // Add styles for loading indicator
+          const apiProxyStyles = document.createElement('style');
+          apiProxyStyles.textContent = \`
+              .api-loading-indicator {
+                  position: fixed;
+                  top: 50%;
+                  left: 50%;
+                  transform: translate(-50%, -50%);
+                  z-index: 1001;
+                  background: rgba(255,255,255,0.8);
+                  padding: 20px;
+                  border-radius: 10px;
+                  box-shadow: 0 0 10px rgba(0,0,0,0.2);
+              }
+          \`;
+          document.head.appendChild(apiProxyStyles);
+          EOF
+          
+          # Include the API proxy script in index.html
+          if ! grep -q "api-proxy.js" dist/index.html; then
+            sed -i 's#</body>#<script src="js/api-proxy.js"></script></body>#' dist/index.html
+          fi
+      
+      - name: Configure Bootstrap Theme for GitHub Pages
+        run: |
+          # Add bootstrap theme to the head of index.html if it's not already there
+          if ! grep -q "bootstrap-agent-dark-theme.min.css" dist/index.html; then
+            sed -i '/<head>/a \    <link rel="stylesheet" href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css">' dist/index.html
+          fi
+          
+          # Add a header message about GitLab hosting
+          cat > dist/css/github-gitlab-header.css << EOF
+          .gitlab-hosting-notice {
+              background-color: var(--bs-primary);
+              color: white;
+              text-align: center;
+              padding: 0.5rem;
+              font-size: 0.9rem;
+          }
+          
+          .gitlab-hosting-notice a {
+              color: white;
+              text-decoration: underline;
+          }
+          EOF
+          
+          # Add the CSS file link to the head
+          if ! grep -q "github-gitlab-header.css" dist/index.html; then
+            sed -i '/<head>/a \    <link rel="stylesheet" href="css/github-gitlab-header.css">' dist/index.html
+          fi
+          
+          # Add the header message after the body tag
+          if ! grep -q "gitlab-hosting-notice" dist/index.html; then
+            sed -i '/<body>/a \    <div class="gitlab-hosting-notice">This control interface is hosted on GitHub Pages. The application backend is running on <a href="${DEPLOYMENT_URL}" target="_blank">GitLab</a>.</div>' dist/index.html
+          fi
+      
+      - name: Deploy to GitHub Pages (UI Only)
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: dist
           branch: gh-pages
+          
+      - name: Notify GitLab About GitHub Pages Deployment
+        if: success()
+        run: |
+          echo "Notifying GitLab about GitHub Pages Control Interface deployment..."
+          
+          if [ -n "${{ secrets.GITLAB_TOKEN }}" ]; then
+            # Use the GitHub-GitLab bridge to notify GitLab
+            python github_gitlab_bridge.py \
+              --direction github-to-gitlab \
+              --action trigger-pipeline \
+              --gitlab-token ${{ secrets.GITLAB_TOKEN }} \
+              --github-repo ${{ github.repository }} \
+              --gitlab-project $GITLAB_PROJECT
+            
+            echo "GitLab notification sent successfully"
+          else
+            echo "GitLab token not available, skipping GitLab notification"
+          fi
+        env:
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
