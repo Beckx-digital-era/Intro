@@ -1,5 +1,5 @@
 document.addEventListener('DOMContentLoaded', function() {
-    const chatContainer = document.getElementById('chat-container');
+    const chatContainer = document.getElementById('top-chat-container');
     const messageInput = document.getElementById('message-input');
     const sendButton = document.getElementById('send-button');
     const typingIndicator = document.createElement('div');
@@ -18,10 +18,13 @@ document.addEventListener('DOMContentLoaded', function() {
         const messageElement = document.createElement('div');
         messageElement.className = `message ${isUser ? 'user-message' : 'ai-message'}`;
         
-        // Process message content for code blocks
+        // Process message content for code blocks and newlines
         let processedContent = content;
         if (content.includes('```')) {
             processedContent = processCodeBlocks(content);
+        } else {
+            // If no code blocks, just convert newlines to HTML line breaks
+            processedContent = content.replace(/\n/g, '<br>');
         }
         
         messageElement.innerHTML = processedContent;
@@ -33,8 +36,11 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Process code blocks in the message
     function processCodeBlocks(content) {
-        // Replace markdown code blocks with HTML
-        return content.replace(/```(\w*)([\s\S]*?)```/g, '<pre><code class="$1">$2</code></pre>');
+        // First convert newlines to HTML line breaks
+        let processedContent = content.replace(/\n/g, '<br>');
+        
+        // Then replace markdown code blocks with HTML
+        return processedContent.replace(/```(\w*)([\s\S]*?)```/g, '<pre><code class="$1">$2</code></pre>');
     }
     
     // Function to show typing indicator
@@ -125,16 +131,16 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     // If no messages, add a welcome message
                     if (data.messages.length === 0) {
-                        addMessage('Hello! I\'m your DevOps AI assistant. I can help you integrate GitHub and GitLab, set up workflows, and automate DevOps tasks. How can I assist you today?', false);
+                        addMessage('✨ Welcome to the DevOps Control Center! ✨\n\nI\'m your AI assistant, the central control for all operations between GitHub and GitLab. Try commands like:\n• "Sync Beckx-digital-era/Intro repository to GitLab"\n• "Set up CI/CD pipeline for the project"\n• "Deploy the application to production"\n\nHow can I help you today?', false);
                     }
                 } else {
                     // If messages is not an array, add a welcome message
-                    addMessage('Hello! I\'m your DevOps AI assistant. I can help you integrate GitHub and GitLab, set up workflows, and automate DevOps tasks. How can I assist you today?', false);
+                    addMessage('✨ Welcome to the DevOps Control Center! ✨\n\nI\'m your AI assistant, the central control for all operations between GitHub and GitLab. Try commands like:\n• "Sync Beckx-digital-era/Intro repository to GitLab"\n• "Set up CI/CD pipeline for the project"\n• "Deploy the application to production"\n\nHow can I help you today?', false);
                 }
             })
             .catch(error => {
                 console.error('Error loading chat history:', error);
-                addMessage('Hello! I\'m your DevOps AI assistant. I can help you integrate GitHub and GitLab, set up workflows, and automate DevOps tasks. How can I assist you today?', false);
+                addMessage('✨ Welcome to the DevOps Control Center! ✨\n\nI\'m your AI assistant, the central control for all operations between GitHub and GitLab. Try commands like:\n• "Sync Beckx-digital-era/Intro repository to GitLab"\n• "Set up CI/CD pipeline for the project"\n• "Deploy the application to production"\n\nHow can I help you today?', false);
             });
     }
     

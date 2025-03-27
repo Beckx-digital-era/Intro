@@ -10,6 +10,14 @@
     border: 1px solid var(--bs-gray-700);
 }
 
+/* Smaller chat container for the top control center */
+#top-chat-container {
+    height: 250px;
+    background-color: var(--bs-dark);
+    border: 1px solid var(--bs-primary);
+    box-shadow: 0 0 10px rgba(var(--bs-primary-rgb), 0.2);
+}
+
 /* Chat message styling */
 .message {
     margin-bottom: 1rem;

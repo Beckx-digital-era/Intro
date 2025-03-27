@@ -8,6 +8,7 @@ import uuid
 from app import app, db
 from models import ChatMessage, Project, Action
 from ai_model import process_message
+from openai_devops_controller import process_chat_message
 from gitlab_api import get_gitlab_projects, create_gitlab_pipeline
 from github_api import get_github_repositories, create_github_repository, get_github_workflows, make_github_request
 from github_gitlab_bridge import sync_github_repo_to_gitlab
@@ -43,8 +44,19 @@ def chat():
         db.session.add(user_chat)
         db.session.commit()
         
-        # Process message with AI model
-        ai_response = process_message(user_message)
+        # Try to process message with OpenAI DevOps controller first
+        try:
+            response = process_chat_message(user_message, session_id)
+            ai_response = response.get('content', '')
+            
+            # If we got an empty response, fall back to simple AI model
+            if not ai_response:
+                logger.warning("OpenAI controller returned empty response, falling back to basic AI model")
+                ai_response = process_message(user_message)
+        except Exception as e:
+            # If OpenAI processing fails, fall back to simple AI model
+            logger.warning(f"Error using OpenAI controller, falling back to basic AI model: {str(e)}")
+            ai_response = process_message(user_message)
         
         # Save AI response to database
         ai_chat = ChatMessage(
@@ -64,30 +76,7 @@ def chat():
         logger.error(f"Error in chat endpoint: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/chat/history')
-def chat_history():
-    """Retrieve chat history for the current session."""
-    try:
-        session_id = session.get('session_id', '')
-        if not session_id:
-            return jsonify({'messages': []})
-        
-        messages = ChatMessage.query.filter_by(session_id=session_id).order_by(ChatMessage.timestamp).all()
-        
-        history = [
-            {
-                'id': msg.id,
-                'content': msg.content,
-                'isUser': msg.is_user,
-                'timestamp': msg.timestamp.isoformat() if msg.timestamp else None
-            }
-            for msg in messages
-        ]
-        
-        return jsonify({'messages': history})
-    except Exception as e:
-        logger.error(f"Error retrieving chat history: {str(e)}")
-        return jsonify({'messages': [], 'error': str(e)})
+
 
 @app.route('/api/gitlab/projects')
 def gitlab_projects():
@@ -317,29 +306,40 @@ def beckx_intro_sync_gitlab():
         project = Project.query.filter_by(github_repo_url='https://github.com/Beckx-digital-era/Intro').first()
         
         if not project:
-            # Create project if it doesn't exist
-            project = Project(
-                name='Beckx-digital-era/Intro',
-                description='GitHub to GitLab integration example',
-                github_repo_url='https://github.com/Beckx-digital-era/Intro',
-                gitlab_project_id='67864923',  # Using the provided GitLab project ID
-                user_id=1  # Default user
-            )
-            db.session.add(project)
-            db.session.commit()
-            logger.info(f"Created project record with GitLab project ID: {project.gitlab_project_id}")
+            return jsonify({'error': 'Repository not found in database'}), 404
         
-        # Use the specified GitLab project ID
-        args = {
-            'direction': 'github-to-gitlab',
-            'action': 'sync-repo',
-            'github_repo': 'Beckx-digital-era/Intro',
-            'gitlab_project': '67864923'  # Use the specific GitLab project ID
-        }
-        
-        # The bridge function will get tokens from environment variables
-        result = sync_github_repo_to_gitlab(args)
-        
+        # If no GitLab project exists yet, create one
+        if not project.gitlab_project_id:
+            # Prepare arguments for the sync function
+            args = {
+                'direction': 'github-to-gitlab',
+                'action': 'sync-repo',
+                'github_repo': 'Beckx-digital-era/Intro'
+            }
+            
+            # The bridge function will get tokens from environment variables
+            result = sync_github_repo_to_gitlab(args)
+            
+            if isinstance(result, dict) and result.get('id'):
+                # Store the GitLab project ID in our database
+                project.gitlab_project_id = str(result.get('id'))
+                db.session.commit()
+                logger.info(f"GitLab project created with ID: {project.gitlab_project_id}")
+            else:
+                logger.error(f"Failed to create GitLab project: {result}")
+                return jsonify({'error': 'Failed to create GitLab project'}), 500
+        else:
+            # If GitLab project already exists, just sync the latest changes
+            args = {
+                'direction': 'github-to-gitlab',
+                'action': 'sync-repo',
+                'github_repo': 'Beckx-digital-era/Intro',
+                'gitlab_project': project.gitlab_project_id
+            }
+            
+            # The bridge function will get tokens from environment variables
+            result = sync_github_repo_to_gitlab(args)
+            
         # Record the action
         action = Action(
             action_type='repository_sync',
