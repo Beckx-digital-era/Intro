@@ -43,14 +43,32 @@ GITLAB_API_BASE_URL = "https://gitlab.com/api/v4"
 
 def get_github_token(args):
     """Get GitHub API token from args or environment variables."""
-    token = args.github_token or os.environ.get("GITHUB_TOKEN")
+    # Handle both Namespace objects and dictionaries
+    if hasattr(args, 'github_token'):
+        token = args.github_token
+    elif isinstance(args, dict) and 'github_token' in args:
+        token = args['github_token']
+    else:
+        token = None
+        
+    # Fall back to environment variable if no token in args
+    token = token or os.environ.get("GITHUB_TOKEN")
     if not token:
         raise ValueError("GitHub API token not provided in args or environment")
     return token
 
 def get_gitlab_token(args):
     """Get GitLab API token from args or environment variables."""
-    token = args.gitlab_token or os.environ.get("GITLAB_TOKEN")
+    # Handle both Namespace objects and dictionaries
+    if hasattr(args, 'gitlab_token'):
+        token = args.gitlab_token
+    elif isinstance(args, dict) and 'gitlab_token' in args:
+        token = args['gitlab_token']
+    else:
+        token = None
+        
+    # Fall back to environment variable if no token in args
+    token = token or os.environ.get("GITLAB_TOKEN")
     if not token:
         raise ValueError("GitLab API token not provided in args or environment")
     return token
@@ -124,11 +142,26 @@ def github_to_gitlab_trigger_pipeline(args):
     
     github_token = get_github_token(args)
     gitlab_token = get_gitlab_token(args)
-    gitlab_project = args.gitlab_project
+    
+    # Handle both Namespace objects and dictionaries
+    if hasattr(args, 'gitlab_project'):
+        gitlab_project = args.gitlab_project
+    elif isinstance(args, dict) and 'gitlab_project' in args:
+        gitlab_project = args['gitlab_project']
+    else:
+        gitlab_project = None
     
     if not gitlab_project:
         # Try to find a GitLab project with a similar name to the GitHub repo
-        github_repo = args.github_repo or os.environ.get("GITHUB_REPOSITORY", "")
+        # Get github_repo from args or environment
+        if hasattr(args, 'github_repo'):
+            github_repo = args.github_repo
+        elif isinstance(args, dict) and 'github_repo' in args:
+            github_repo = args['github_repo']
+        else:
+            github_repo = None
+            
+        github_repo = github_repo or os.environ.get("GITHUB_REPOSITORY", "")
         if github_repo:
             # Extract the repo name without owner
             repo_name = github_repo.split("/")[-1] if "/" in github_repo else github_repo
@@ -172,7 +205,7 @@ def github_to_gitlab_trigger_pipeline(args):
                         {"key": "GITHUB_WORKFLOW", "value": github_workflow},
                         {"key": "GITHUB_RUN_ID", "value": github_run_id},
                         {"key": "GITHUB_RUN_NUMBER", "value": github_run_number},
-                        {"key": "GITHUB_REPOSITORY", "value": args.github_repo or os.environ.get("GITHUB_REPOSITORY", "")}
+                        {"key": "GITHUB_REPOSITORY", "value": github_repo or os.environ.get("GITHUB_REPOSITORY", "")}
                     ]
                 }
             )
@@ -194,11 +227,11 @@ def github_to_gitlab_trigger_pipeline(args):
         logger.info(f"Pipeline URL: {result.get('web_url', 'N/A')}")
         
         # Update GitHub status
-        if args.github_repo:
+        if github_repo:
             try:
                 # Get the latest commit SHA
                 repo_info = make_github_request(
-                    f"repos/{args.github_repo}/commits",
+                    f"repos/{github_repo}/commits",
                     github_token,
                     params={"per_page": 1}
                 )
@@ -208,7 +241,7 @@ def github_to_gitlab_trigger_pipeline(args):
                     
                     # Create a commit status
                     status_result = make_github_request(
-                        f"repos/{args.github_repo}/statuses/{commit_sha}",
+                        f"repos/{github_repo}/statuses/{commit_sha}",
                         github_token,
                         method="POST",
                         data={
@@ -234,14 +267,30 @@ def gitlab_to_github_dispatch(args):
     logger.info("Triggering GitHub repository dispatch from GitLab...")
     
     github_token = get_github_token(args)
-    github_repo = args.github_repo
+    
+    # Handle both Namespace objects and dictionaries
+    if hasattr(args, 'github_repo'):
+        github_repo = args.github_repo
+    elif isinstance(args, dict) and 'github_repo' in args:
+        github_repo = args['github_repo']
+    else:
+        github_repo = None
     
     if not github_repo:
         raise ValueError("GitHub repository not provided")
     
     # Get GitLab pipeline information if available
     gitlab_pipeline_id = os.environ.get("CI_PIPELINE_ID", "unknown")
-    gitlab_project_id = os.environ.get("CI_PROJECT_ID", args.gitlab_project or "unknown")
+    
+    # Get gitlab_project from args or environment
+    if hasattr(args, 'gitlab_project'):
+        gitlab_project_id = args.gitlab_project
+    elif isinstance(args, dict) and 'gitlab_project' in args:
+        gitlab_project_id = args['gitlab_project']
+    else:
+        gitlab_project_id = None
+        
+    gitlab_project_id = gitlab_project_id or os.environ.get("CI_PROJECT_ID", "unknown")
     gitlab_job_id = os.environ.get("CI_JOB_ID", "unknown")
     
     # Trigger the GitHub repository dispatch event
@@ -275,8 +324,21 @@ def sync_github_repo_to_gitlab(args):
     
     github_token = get_github_token(args)
     gitlab_token = get_gitlab_token(args)
-    github_repo = args.github_repo
-    gitlab_project = args.gitlab_project
+    
+    # Handle both Namespace objects and dictionaries
+    if hasattr(args, 'github_repo'):
+        github_repo = args.github_repo
+    elif isinstance(args, dict) and 'github_repo' in args:
+        github_repo = args['github_repo']
+    else:
+        github_repo = None
+        
+    if hasattr(args, 'gitlab_project'):
+        gitlab_project = args.gitlab_project
+    elif isinstance(args, dict) and 'gitlab_project' in args:
+        gitlab_project = args['gitlab_project']
+    else:
+        gitlab_project = None
     
     if not github_repo:
         raise ValueError("GitHub repository not provided")
@@ -369,8 +431,21 @@ def update_github_status_from_gitlab(args):
     
     github_token = get_github_token(args)
     gitlab_token = get_gitlab_token(args)
-    github_repo = args.github_repo
-    gitlab_project = args.gitlab_project
+    
+    # Handle both Namespace objects and dictionaries
+    if hasattr(args, 'github_repo'):
+        github_repo = args.github_repo
+    elif isinstance(args, dict) and 'github_repo' in args:
+        github_repo = args['github_repo']
+    else:
+        github_repo = None
+        
+    if hasattr(args, 'gitlab_project'):
+        gitlab_project = args.gitlab_project
+    elif isinstance(args, dict) and 'gitlab_project' in args:
+        gitlab_project = args['gitlab_project']
+    else:
+        gitlab_project = None
     
     if not github_repo:
         raise ValueError("GitHub repository not provided")
