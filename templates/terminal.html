@@ -1,0 +1,188 @@
+{% extends 'layout.html' %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <div class="card mb-4">
+            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                <h3 class="mb-0"><i class="fas fa-terminal me-2"></i>AI-Powered Terminal</h3>
+                <div>
+                    <button id="clear-terminal" class="btn btn-sm btn-outline-light">
+                        <i class="fas fa-eraser me-1"></i>Clear
+                    </button>
+                    <a href="{{ url_for('index') }}" class="btn btn-sm btn-outline-light ms-2">
+                        <i class="fas fa-home me-1"></i>Dashboard
+                    </a>
+                </div>
+            </div>
+            <div class="card-body bg-dark p-0">
+                <div id="terminal-container" class="p-3" style="min-height: 400px; max-height: 600px; overflow-y: auto; color: #4af626; font-family: 'Courier New', monospace; background-color: #0c0c0c;">
+                    <div class="terminal-output">
+                        <div class="text-warning">Welcome to AI-Powered DevOps Terminal!</div>
+                        <div class="text-info">This terminal has controlled access to server operations.</div>
+                        <div class="text-success">Type 'help' for a list of available commands.</div>
+                        <div class="text-light">-----------------------------------------------</div>
+                    </div>
+                </div>
+                <div class="terminal-input-area p-2 border-top border-secondary">
+                    <div class="input-group">
+                        <span class="input-group-text bg-dark text-light border-0">
+                            <i class="fas fa-greater-than"></i>
+                        </span>
+                        <input type="text" id="terminal-input" class="form-control bg-dark text-light border-0" placeholder="Enter command...">
+                        <button id="execute-command" class="btn btn-success">Execute</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mb-4">
+            <div class="card-header bg-info text-white">
+                <h4 class="mb-0"><i class="fas fa-info-circle me-2"></i>Help & Documentation</h4>
+            </div>
+            <div class="card-body">
+                <h5>Available Commands:</h5>
+                <ul class="list-group">
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span><code>ls</code> - List files in current directory</span>
+                        <span class="badge bg-success rounded-pill">Safe</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span><code>pwd</code> - Print working directory</span>
+                        <span class="badge bg-success rounded-pill">Safe</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span><code>cat [filename]</code> - Display file contents</span>
+                        <span class="badge bg-success rounded-pill">Safe</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span><code>git status</code> - Check Git repository status</span>
+                        <span class="badge bg-success rounded-pill">Safe</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span><code>ps</code> - List running processes</span>
+                        <span class="badge bg-success rounded-pill">Safe</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span><code>help</code> - Display this help information</span>
+                        <span class="badge bg-success rounded-pill">Safe</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span><code>clear</code> - Clear the terminal screen</span>
+                        <span class="badge bg-success rounded-pill">Safe</span>
+                    </li>
+                </ul>
+                
+                <div class="alert alert-warning mt-3">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <strong>Note:</strong> For security reasons, some commands are restricted. Dangerous operations like file deletion or system modifications are not allowed.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const terminalContainer = document.getElementById('terminal-container');
+    const terminalInput = document.getElementById('terminal-input');
+    const executeButton = document.getElementById('execute-command');
+    const clearButton = document.getElementById('clear-terminal');
+    
+    // Function to add output to the terminal
+    function addOutput(text, isCommand = false, isError = false) {
+        const outputElement = document.createElement('div');
+        
+        if (isCommand) {
+            outputElement.innerHTML = `<span class="text-primary">$ </span>${text}`;
+        } else if (isError) {
+            outputElement.className = 'text-danger';
+            outputElement.textContent = text;
+        } else {
+            outputElement.className = 'text-light';
+            outputElement.innerHTML = text.replace(/\n/g, '<br>');
+        }
+        
+        const outputContainer = document.querySelector('.terminal-output');
+        outputContainer.appendChild(outputElement);
+        
+        // Scroll to bottom
+        terminalContainer.scrollTop = terminalContainer.scrollHeight;
+    }
+    
+    // Function to execute terminal command
+    function executeCommand() {
+        const command = terminalInput.value.trim();
+        
+        if (!command) return;
+        
+        // Add the command to terminal output
+        addOutput(command, true);
+        
+        // Clear input
+        terminalInput.value = '';
+        
+        // Handle built-in commands
+        if (command === 'clear') {
+            document.querySelector('.terminal-output').innerHTML = '';
+            return;
+        }
+        
+        if (command === 'help') {
+            addOutput(`
+                Available commands:
+                - ls: List files in current directory
+                - pwd: Print working directory
+                - cat [filename]: Display file contents
+                - git status: Check Git repository status
+                - ps: List running processes
+                - help: Display this help information
+                - clear: Clear the terminal screen
+                
+                Note: For security reasons, some commands are restricted.
+            `);
+            return;
+        }
+        
+        // Send command to server for execution
+        fetch('/api/terminal/execute', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ command })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                addOutput(data.output, false, true);
+            } else {
+                addOutput(data.output);
+            }
+        })
+        .catch(error => {
+            addOutput(`Error: ${error.message}`, false, true);
+        });
+    }
+    
+    // Event listeners
+    executeButton.addEventListener('click', executeCommand);
+    
+    terminalInput.addEventListener('keypress', function(event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            executeCommand();
+        }
+    });
+    
+    clearButton.addEventListener('click', function() {
+        document.querySelector('.terminal-output').innerHTML = '';
+    });
+    
+    // Focus on input when page loads
+    terminalInput.focus();
+});
+</script>
+{% endblock %}
