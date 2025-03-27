@@ -317,40 +317,29 @@ def beckx_intro_sync_gitlab():
         project = Project.query.filter_by(github_repo_url='https://github.com/Beckx-digital-era/Intro').first()
         
         if not project:
-            return jsonify({'error': 'Repository not found in database'}), 404
+            # Create project if it doesn't exist
+            project = Project(
+                name='Beckx-digital-era/Intro',
+                description='GitHub to GitLab integration example',
+                github_repo_url='https://github.com/Beckx-digital-era/Intro',
+                gitlab_project_id='67864923',  # Using the provided GitLab project ID
+                user_id=1  # Default user
+            )
+            db.session.add(project)
+            db.session.commit()
+            logger.info(f"Created project record with GitLab project ID: {project.gitlab_project_id}")
         
-        # If no GitLab project exists yet, create one
-        if not project.gitlab_project_id:
-            # Prepare arguments for the sync function
-            args = {
-                'direction': 'github-to-gitlab',
-                'action': 'sync-repo',
-                'github_repo': 'Beckx-digital-era/Intro'
-            }
-            
-            # The bridge function will get tokens from environment variables
-            result = sync_github_repo_to_gitlab(args)
-            
-            if isinstance(result, dict) and result.get('id'):
-                # Store the GitLab project ID in our database
-                project.gitlab_project_id = str(result.get('id'))
-                db.session.commit()
-                logger.info(f"GitLab project created with ID: {project.gitlab_project_id}")
-            else:
-                logger.error(f"Failed to create GitLab project: {result}")
-                return jsonify({'error': 'Failed to create GitLab project'}), 500
-        else:
-            # If GitLab project already exists, just sync the latest changes
-            args = {
-                'direction': 'github-to-gitlab',
-                'action': 'sync-repo',
-                'github_repo': 'Beckx-digital-era/Intro',
-                'gitlab_project': project.gitlab_project_id
-            }
-            
-            # The bridge function will get tokens from environment variables
-            result = sync_github_repo_to_gitlab(args)
-            
+        # Use the specified GitLab project ID
+        args = {
+            'direction': 'github-to-gitlab',
+            'action': 'sync-repo',
+            'github_repo': 'Beckx-digital-era/Intro',
+            'gitlab_project': '67864923'  # Use the specific GitLab project ID
+        }
+        
+        # The bridge function will get tokens from environment variables
+        result = sync_github_repo_to_gitlab(args)
+        
         # Record the action
         action = Action(
             action_type='repository_sync',
