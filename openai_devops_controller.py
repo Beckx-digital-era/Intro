@@ -12,18 +12,15 @@ import os
 import json
 import time
 import logging
-import openai
+import base64
 from datetime import datetime
 from functools import wraps
 from flask import session, request, jsonify
 from collections import deque
+from openai import OpenAI
 
 # Import our secure API modules
-from secure_api_auth import (
-    api_security_manager,
-    github_token_manager,
-    gitlab_token_manager
-)
+from secure_api_auth import make_secure_github_request, make_secure_gitlab_request
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -35,7 +32,9 @@ if not OPENAI_API_KEY:
     logger.warning("OPENAI_API_KEY not found in environment variables")
 
 # Default to GPT-4 but allow configuration
-DEFAULT_MODEL = "gpt-4-turbo-preview"
+# The newest OpenAI model is "gpt-4o" which was released May 13, 2024.
+# Do not change this unless explicitly requested by the user
+DEFAULT_MODEL = "gpt-4o"
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", DEFAULT_MODEL)
 
 # Maximum conversation history to maintain
@@ -63,9 +62,9 @@ class DevOpsIntelligence:
         
         if not self.api_key:
             logger.error("No OpenAI API key provided. AI features will not function.")
-        else:
-            # Set the API key for the OpenAI client
-            openai.api_key = self.api_key
+        
+        # Create OpenAI client
+        self.client = OpenAI(api_key=self.api_key)
     
     def _create_system_prompt(self):
         """Create the system prompt for the DevOps AI assistant."""
@@ -130,7 +129,7 @@ class DevOpsIntelligence:
         
         for attempt in range(self.max_retries):
             try:
-                response = openai.chat.completions.create(
+                response = self.client.chat.completions.create(
                     model=self.model,
                     messages=messages,
                     temperature=0.7,
@@ -148,8 +147,18 @@ class DevOpsIntelligence:
                     time.sleep(self.retry_delay * (attempt + 1))  # Exponential backoff
         
         if not response_content:
+            # Provide a more detailed fallback response since OpenAI API is unavailable
+            fallback_content = (
+                f"I'm having trouble connecting to the OpenAI services. Error: {error}\n\n"
+                "However, I can still help with basic DevOps operations. Here are some things I can do:\n"
+                "1. Create or manage GitHub repositories\n"
+                "2. Set up GitLab projects and pipelines\n"
+                "3. Synchronize repositories between GitHub and GitLab\n"
+                "4. Manage CI/CD workflows\n\n"
+                "Just let me know what you need help with, and I'll do my best to assist using the available services."
+            )
             return {
-                "content": f"I'm having trouble connecting to my AI services. Please try again later. Error: {error}",
+                "content": fallback_content,
                 "error": error
             }
         
@@ -327,7 +336,7 @@ class DevOpsOrchestrator:
             dict: Created repository information
         """
         logger.info(f"Creating GitHub repository: {name}")
-        result = api_security_manager.secure_github_request(
+        result = make_secure_github_request(
             "user/repos",
             method="POST",
             data={
@@ -355,7 +364,7 @@ class DevOpsOrchestrator:
         
         # Ensure the workflows directory exists
         try:
-            workflows_dir = api_security_manager.secure_github_request(
+            workflows_dir = make_secure_github_request(
                 f"repos/{owner}/{repo}/contents/.github/workflows",
                 method="GET"
             )
@@ -363,13 +372,13 @@ class DevOpsOrchestrator:
             # Create .github/workflows directory structure
             try:
                 # First check if .github exists
-                github_dir = api_security_manager.secure_github_request(
+                github_dir = make_secure_github_request(
                     f"repos/{owner}/{repo}/contents/.github",
                     method="GET"
                 )
             except Exception:
                 # Create .github directory
-                api_security_manager.secure_github_request(
+                make_secure_github_request(
                     f"repos/{owner}/{repo}/contents/.github",
                     method="PUT",
                     data={
@@ -380,7 +389,7 @@ class DevOpsOrchestrator:
                 )
             
             # Create workflows directory
-            api_security_manager.secure_github_request(
+            make_secure_github_request(
                 f"repos/{owner}/{repo}/contents/.github/workflows",
                 method="PUT",
                 data={
@@ -394,7 +403,7 @@ class DevOpsOrchestrator:
         import base64
         encoded_content = base64.b64encode(workflow_content.encode()).decode()
         
-        result = api_security_manager.secure_github_request(
+        result = make_secure_github_request(
             f"repos/{owner}/{repo}/contents/.github/workflows/{workflow_name}.yml",
             method="PUT",
             data={
@@ -418,7 +427,7 @@ class DevOpsOrchestrator:
             dict: Created project information
         """
         logger.info(f"Creating GitLab project: {name}")
-        result = api_security_manager.secure_gitlab_request(
+        result = make_secure_gitlab_request(
             "projects",
             method="POST",
             data={
@@ -441,7 +450,7 @@ class DevOpsOrchestrator:
             dict: Pipeline information
         """
         logger.info(f"Triggering GitLab pipeline in project {project_id}, ref {ref}")
-        result = api_security_manager.secure_gitlab_request(
+        result = make_secure_gitlab_request(
             f"projects/{project_id}/pipeline",
             method="POST",
             data={"ref": ref}
@@ -462,12 +471,12 @@ class DevOpsOrchestrator:
         logger.info(f"Syncing GitHub repo {github_repo} to GitLab project {gitlab_project}")
         
         # Get GitHub repository information
-        repo_info = api_security_manager.secure_github_request(
+        repo_info = make_secure_github_request(
             f"repos/{github_repo}"
         )
         
         # Update GitLab project description
-        api_security_manager.secure_gitlab_request(
+        make_secure_gitlab_request(
             f"projects/{gitlab_project}",
             method="PUT",
             data={
@@ -476,7 +485,7 @@ class DevOpsOrchestrator:
         )
         
         # Get repository contents
-        contents = api_security_manager.secure_github_request(
+        contents = make_secure_github_request(
             f"repos/{github_repo}/contents"
         )
         
@@ -484,16 +493,16 @@ class DevOpsOrchestrator:
         for item in contents:
             if item['type'] == 'file':
                 # Download file content from GitHub
-                file_content = api_security_manager.secure_github_request(
-                    item['download_url'],
-                    is_raw_url=True
-                )
+                # Directly access the download URL without API prefix
+                import requests
+                file_response = requests.get(item['download_url'])
+                file_content = file_response.text
                 
                 # Upload to GitLab
                 import base64
                 encoded_content = base64.b64encode(file_content.encode()).decode()
                 
-                api_security_manager.secure_gitlab_request(
+                make_secure_gitlab_request(
                     f"projects/{gitlab_project}/repository/files/{item['path']}",
                     method="POST",
                     data={
@@ -539,7 +548,16 @@ def process_chat_message(user_message, session_id=None):
     operations_results = []
     if "operations" in ai_response and ai_response["operations"]:
         for operation in ai_response["operations"]:
-            op_id = f"{operation['platform']}:{operation['operation']}"
+            # Access dictionary keys safely
+            if isinstance(operation, dict):
+                platform = operation.get("platform", "unknown")
+                operation_type = operation.get("operation", "unknown")
+            else:
+                # Handle case where operation might be a string or other type
+                platform = "unknown"
+                operation_type = str(operation)
+            op_id = f"{platform}:{operation_type}"
+            
             # Extract parameters from operation (this would be more sophisticated in a real system)
             parameters = {}  # In reality, we would extract parameters from the user message
             
@@ -573,8 +591,8 @@ def validate_openai_token():
     
     try:
         # Make a simple API call to check if the token is valid
-        openai.api_key = OPENAI_API_KEY
-        models = openai.models.list()
+        client = OpenAI(api_key=OPENAI_API_KEY)
+        models = client.models.list()
         return len(models.data) > 0
     except Exception as e:
         logger.error(f"Error validating OpenAI token: {str(e)}")
