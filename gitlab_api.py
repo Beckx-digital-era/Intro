@@ -34,8 +34,8 @@ def get_gitlab_token():
     
     return token
 
-def make_gitlab_request(endpoint, method="GET", data=None, params=None):
-    """Make a request to the GitLab API."""
+def make_gitlab_request(endpoint, method="GET", data=None, params=None, max_retries=3):
+    """Make a request to the GitLab API with retry logic."""
     token = get_gitlab_token()
     url = f"{GITLAB_API_BASE_URL}/{endpoint}"
     
@@ -44,31 +44,73 @@ def make_gitlab_request(endpoint, method="GET", data=None, params=None):
         "Content-Type": "application/json"
     }
     
-    try:
-        if method == "GET":
-            response = requests.get(url, headers=headers, params=params)
-        elif method == "POST":
-            response = requests.post(url, headers=headers, json=data)
-        elif method == "PUT":
-            response = requests.put(url, headers=headers, json=data)
-        elif method == "DELETE":
-            response = requests.delete(url, headers=headers)
-        else:
-            raise ValueError(f"Unsupported HTTP method: {method}")
-        
-        response.raise_for_status()
-        
-        # Handle responses without JSON content
-        if response.status_code == 204 or not response.text.strip():
-            return {"status": "success", "status_code": response.status_code}
-        
-        return response.json()
+    logger.debug(f"Making GitLab API request to: {url}")
     
-    except requests.exceptions.RequestException as e:
-        logger.error(f"GitLab API request failed: {str(e)}")
-        if hasattr(e, 'response') and e.response is not None and hasattr(e.response, 'text'):
-            logger.error(f"Response content: {e.response.text}")
-        raise
+    # Initialize retry counter
+    retries = 0
+    last_exception = None
+    
+    while retries < max_retries:
+        try:
+            if method == "GET":
+                response = requests.get(url, headers=headers, params=params, timeout=10)
+            elif method == "POST":
+                response = requests.post(url, headers=headers, json=data, timeout=10)
+            elif method == "PUT":
+                response = requests.put(url, headers=headers, json=data, timeout=10)
+            elif method == "DELETE":
+                response = requests.delete(url, headers=headers, timeout=10)
+            else:
+                raise ValueError(f"Unsupported HTTP method: {method}")
+            
+            # Log the response status
+            logger.debug(f"GitLab API response status: {response.status_code}")
+            
+            # Check if the token is invalid
+            if response.status_code == 401:
+                logger.error("GitLab API token is invalid or expired")
+                return {
+                    "status": "error", 
+                    "message": "GitLab API token is invalid or expired. Please update your token."
+                }
+            
+            response.raise_for_status()
+            
+            # Handle responses without JSON content
+            if response.status_code == 204 or not response.text.strip():
+                return {"status": "success", "status_code": response.status_code}
+            
+            return response.json()
+            
+        except requests.exceptions.RequestException as e:
+            last_exception = e
+            retries += 1
+            logger.warning(f"GitLab API request failed (attempt {retries}/{max_retries}): {str(e)}")
+            
+            if hasattr(e, 'response') and e.response is not None:
+                if hasattr(e.response, 'text'):
+                    logger.warning(f"Response content: {e.response.text}")
+                
+                # If we get a 401 Unauthorized, no point in retrying
+                if e.response.status_code == 401:
+                    logger.error("GitLab API token is invalid or expired")
+                    return {
+                        "status": "error", 
+                        "message": "GitLab API token is invalid or expired. Please update your token."
+                    }
+            
+            # Only sleep if we're going to retry
+            if retries < max_retries:
+                import time
+                time.sleep(1)  # Wait 1 second before retrying
+    
+    # If we've exhausted all retries, log the error and raise the exception
+    logger.error(f"GitLab API request failed after {max_retries} attempts")
+    if last_exception:
+        # Return error information instead of raising an exception
+        error_message = str(last_exception)
+        logger.error(f"Final error: {error_message}")
+        return {"status": "error", "message": error_message}
 
 def get_gitlab_projects():
     """Get a list of GitLab projects for the authenticated user."""

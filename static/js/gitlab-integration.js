@@ -24,6 +24,34 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Clear loading indicator
                 projectsList.innerHTML = '';
                 
+                // Check if there's an error in the response
+                if (data.error) {
+                    const errorMessage = data.error;
+                    console.error('GitLab API error:', errorMessage);
+                    
+                    // Check if it's a token-related error
+                    if (data.needs_token_update) {
+                        projectsList.innerHTML = `
+                            <div class="alert alert-danger">
+                                <h5>GitLab API Token Error</h5>
+                                <p>${errorMessage}</p>
+                                <p>Please update your GitLab API token to continue using GitLab integration features.</p>
+                                <button class="btn btn-primary mt-2" id="update-gitlab-token-btn">Update GitLab Token</button>
+                            </div>
+                        `;
+                        
+                        // Add event listener to update token button
+                        document.getElementById('update-gitlab-token-btn').addEventListener('click', function() {
+                            // Open a modal or redirect to token update page
+                            alert('Please contact your administrator to update the GitLab API token.');
+                            // Here you could add code to open a modal for token input
+                        });
+                    } else {
+                        projectsList.innerHTML = `<div class="alert alert-danger">Error: ${errorMessage}</div>`;
+                    }
+                    return;
+                }
+                
                 if (data.projects && data.projects.length > 0) {
                     // Display projects
                     data.projects.forEach(project => {
@@ -122,12 +150,30 @@ document.addEventListener('DOMContentLoaded', function() {
             })
         })
         .then(response => {
-            if (!response.ok) {
-                throw new Error('Failed to create pipeline');
-            }
-            return response.json();
+            // Always parse the response
+            return response.json().then(data => {
+                // Check response status code
+                if (!response.ok) {
+                    // Add error data to our error object
+                    const error = new Error(data.error || 'Failed to create pipeline');
+                    error.responseData = data;
+                    throw error;
+                }
+                return data;
+            });
         })
         .then(data => {
+            // Check if there's an error in the response
+            if (data.error) {
+                const errorMessage = data.error;
+                console.error('GitLab API error when creating pipeline:', errorMessage);
+                
+                // Create custom error object with the response data
+                const error = new Error(errorMessage);
+                error.responseData = data;
+                throw error;
+            }
+            
             console.log('Pipeline created:', data);
             
             // Show success toast
@@ -144,7 +190,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
                     </div>
                     <div class="toast-body">
-                        Pipeline created successfully! Pipeline ID: ${data.id}
+                        Pipeline created successfully! Pipeline ID: ${data.id || 'N/A'}
                     </div>
                 `;
                 toastContainer.appendChild(successToast);
@@ -166,7 +212,54 @@ document.addEventListener('DOMContentLoaded', function() {
         .catch(error => {
             console.error('Error:', error);
             
-            // Show error toast
+            // Get response data if available
+            const responseData = error.responseData || {};
+            
+            // Special handling for token-related errors
+            if (responseData.needs_token_update) {
+                // Show token error toast
+                if (toastContainer) {
+                    const tokenErrorToast = document.createElement('div');
+                    tokenErrorToast.className = 'toast show bg-warning text-dark';
+                    tokenErrorToast.role = 'alert';
+                    tokenErrorToast.ariaLive = 'assertive';
+                    tokenErrorToast.ariaAtomic = 'true';
+                    tokenErrorToast.innerHTML = `
+                        <div class="toast-header bg-warning text-dark">
+                            <strong class="me-auto">GitLab Token Error</strong>
+                            <small>Just now</small>
+                            <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+                        </div>
+                        <div class="toast-body">
+                            <p>Your GitLab API token is invalid or has expired.</p>
+                            <p>Please contact your administrator to update the token.</p>
+                            <button class="btn btn-sm btn-primary mt-2" id="update-gitlab-token-btn-toast">Update Token</button>
+                        </div>
+                    `;
+                    toastContainer.appendChild(tokenErrorToast);
+                    
+                    // Add event listener to the update token button in the toast
+                    document.getElementById('update-gitlab-token-btn-toast').addEventListener('click', function() {
+                        alert('Please contact your administrator to update the GitLab API token.');
+                    });
+                    
+                    // Auto-dismiss after 10 seconds (longer for important message)
+                    setTimeout(() => {
+                        tokenErrorToast.classList.remove('show');
+                        setTimeout(() => {
+                            if (tokenErrorToast.parentNode === toastContainer) {
+                                toastContainer.removeChild(tokenErrorToast);
+                            }
+                        }, 500);
+                    }, 10000);
+                }
+                
+                // Also refresh the projects list to show the token error message there
+                loadGitLabProjects();
+                return;
+            }
+            
+            // Standard error toast for other errors
             if (toastContainer) {
                 const errorToast = document.createElement('div');
                 errorToast.className = 'toast show bg-danger text-white';
@@ -195,6 +288,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     }, 500);
                 }, 5000);
             }
+            
+            // Load recent actions to show the failed action (if recorded)
+            loadRecentActions();
         });
     }
     
