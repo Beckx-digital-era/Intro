@@ -2,11 +2,14 @@ import json
 import logging
 import os
 import requests
-from flask import render_template, request, jsonify, session
+import subprocess
 import uuid
+from flask import render_template, request, jsonify, session, redirect, url_for, flash
+from flask_login import LoginManager, login_user, login_required, logout_user, current_user
+from werkzeug.security import generate_password_hash, check_password_hash
 
 from app import app, db
-from models import ChatMessage, Project, Action
+from models import ChatMessage, Project, Action, User
 from ai_model import process_message
 from openai_devops_controller import process_chat_message
 from gitlab_api import get_gitlab_projects, create_gitlab_pipeline
@@ -15,7 +18,79 @@ from github_gitlab_bridge import sync_github_repo_to_gitlab
 
 logger = logging.getLogger(__name__)
 
+# Set up Flask Login
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Login page for user authentication."""
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+        
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        user = User.query.filter_by(username=username).first()
+        
+        if user and check_password_hash(user.password_hash, password):
+            login_user(user)
+            return redirect(url_for('index'))
+        else:
+            flash('Invalid username or password')
+    
+    return render_template('login.html')
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    """Registration page for new users."""
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+        
+    if request.method == 'POST':
+        username = request.form.get('username')
+        email = request.form.get('email')
+        password = request.form.get('password')
+        
+        # Check if username or email already exists
+        if User.query.filter_by(username=username).first():
+            flash('Username already exists')
+            return render_template('register.html')
+            
+        if User.query.filter_by(email=email).first():
+            flash('Email already exists')
+            return render_template('register.html')
+        
+        # Create new user
+        new_user = User(
+            username=username,
+            email=email,
+            password_hash=generate_password_hash(password)
+        )
+        
+        db.session.add(new_user)
+        db.session.commit()
+        
+        flash('Registration successful! Please log in.')
+        return redirect(url_for('login'))
+    
+    return render_template('register.html')
+
+@app.route('/logout')
+@login_required
+def logout():
+    """Logout the current user."""
+    logout_user()
+    return redirect(url_for('login'))
+
 @app.route('/')
+@login_required
 def index():
     """Render the main page with the chat interface."""
     # Generate a unique session ID if not already present
@@ -23,6 +98,74 @@ def index():
         session['session_id'] = str(uuid.uuid4())
     
     return render_template('index.html')
+
+@app.route('/terminal')
+@login_required
+def terminal():
+    """Render the terminal interface page."""
+    return render_template('terminal.html')
+    
+@app.route('/api/terminal/execute', methods=['POST'])
+@login_required
+def execute_command():
+    """Execute a command in the terminal and return the result."""
+    try:
+        data = request.json
+        command = data.get('command', '')
+        
+        if not command:
+            return jsonify({'error': 'Command is required'}), 400
+            
+        # Security check - prevent dangerous commands
+        if any(dangerous_cmd in command for dangerous_cmd in ['rm -rf', 'sudo', '>', '|', '&']):
+            return jsonify({
+                'output': 'Error: Command not allowed for security reasons.',
+                'error': True
+            })
+        
+        # Execute the command
+        try:
+            output = subprocess.check_output(
+                command,
+                shell=True,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=10
+            )
+            
+            # Record the action
+            action = Action(
+                action_type='terminal_command',
+                description=f'Executed command: {command}',
+                status='completed',
+                project_id=1,  # Default project ID
+                user_id=1  # Using 1 as default user ID since current_user might not be available
+            )
+            db.session.add(action)
+            db.session.commit()
+            
+            return jsonify({
+                'output': output,
+                'error': False
+            })
+            
+        except subprocess.CalledProcessError as e:
+            return jsonify({
+                'output': e.output,
+                'error': True
+            })
+        except subprocess.TimeoutExpired:
+            return jsonify({
+                'output': 'Command execution timed out after 10 seconds.',
+                'error': True
+            })
+    
+    except Exception as e:
+        logger.error(f"Error executing terminal command: {str(e)}")
+        return jsonify({
+            'output': f'Internal error: {str(e)}',
+            'error': True
+        }), 500
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
