@@ -7,6 +7,7 @@ from app import app, db
 from models import ChatMessage, Project, Action
 from ai_model import process_message
 from gitlab_api import get_gitlab_projects, create_gitlab_pipeline
+from github_api import get_github_repositories, create_github_repository, get_github_workflows
 
 logger = logging.getLogger(__name__)
 
@@ -63,23 +64,27 @@ def chat():
 @app.route('/api/chat/history')
 def chat_history():
     """Retrieve chat history for the current session."""
-    session_id = session.get('session_id', '')
-    if not session_id:
-        return jsonify({'messages': []})
-    
-    messages = ChatMessage.query.filter_by(session_id=session_id).order_by(ChatMessage.timestamp).all()
-    
-    history = [
-        {
-            'id': msg.id,
-            'content': msg.content,
-            'isUser': msg.is_user,
-            'timestamp': msg.timestamp.isoformat()
-        }
-        for msg in messages
-    ]
-    
-    return jsonify({'messages': history})
+    try:
+        session_id = session.get('session_id', '')
+        if not session_id:
+            return jsonify({'messages': []})
+        
+        messages = ChatMessage.query.filter_by(session_id=session_id).order_by(ChatMessage.timestamp).all()
+        
+        history = [
+            {
+                'id': msg.id,
+                'content': msg.content,
+                'isUser': msg.is_user,
+                'timestamp': msg.timestamp.isoformat() if msg.timestamp else None
+            }
+            for msg in messages
+        ]
+        
+        return jsonify({'messages': history})
+    except Exception as e:
+        logger.error(f"Error retrieving chat history: {str(e)}")
+        return jsonify({'messages': [], 'error': str(e)})
 
 @app.route('/api/gitlab/projects')
 def gitlab_projects():
@@ -119,6 +124,63 @@ def create_pipeline():
     
     except Exception as e:
         logger.error(f"Error creating GitLab pipeline: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/github/repositories')
+def github_repositories():
+    """Retrieve repositories from GitHub using the stored API token."""
+    try:
+        repositories = get_github_repositories()
+        return jsonify({'repositories': repositories})
+    except Exception as e:
+        logger.error(f"Error fetching GitHub repositories: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/github/repository', methods=['POST'])
+def github_create_repository():
+    """Create a new GitHub repository."""
+    try:
+        data = request.json
+        name = data.get('name')
+        description = data.get('description', '')
+        
+        if not name:
+            return jsonify({'error': 'Repository name is required'}), 400
+        
+        result = create_github_repository(name, description)
+        
+        # Record the action
+        action = Action(
+            action_type='repository_creation',
+            description=f'Created GitHub repository "{name}"',
+            status='completed',
+            project_id=1,  # Default project ID for now
+            user_id=1  # Default user ID for now
+        )
+        db.session.add(action)
+        db.session.commit()
+        
+        return jsonify(result)
+    
+    except Exception as e:
+        logger.error(f"Error creating GitHub repository: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/github/workflows')
+def github_workflows():
+    """Retrieve workflows for a GitHub repository."""
+    try:
+        owner = request.args.get('owner')
+        repo = request.args.get('repo')
+        
+        if not owner or not repo:
+            return jsonify({'error': 'Owner and repository name are required'}), 400
+        
+        workflows = get_github_workflows(owner, repo)
+        return jsonify({'workflows': workflows})
+    
+    except Exception as e:
+        logger.error(f"Error fetching GitHub workflows: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/actions/recent')

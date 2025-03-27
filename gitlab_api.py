@@ -15,11 +15,21 @@ def get_gitlab_token():
     """Get the GitLab API token from the environment or the Flask app config."""
     token = os.environ.get("GITLAB_TOKEN")
     
+    # Alternative environment variable names
+    if not token:
+        token = os.environ.get("GL_TOKEN")
+    
     # If not found in environment, try to get from Flask app config
-    if not token and current_app:
-        token = current_app.config.get("GITLAB_TOKEN")
+    if not token:
+        try:
+            if current_app:
+                token = current_app.config.get("GITLAB_TOKEN")
+        except RuntimeError:
+            # This happens when outside of Flask context
+            pass
     
     if not token:
+        logger.error("GitLab API token not found in environment variables or app config")
         raise ValueError("GitLab API token not found in environment variables or app config")
     
     return token
@@ -51,7 +61,7 @@ def make_gitlab_request(endpoint, method="GET", data=None, params=None):
     
     except requests.exceptions.RequestException as e:
         logger.error(f"GitLab API request failed: {str(e)}")
-        if hasattr(e.response, 'text'):
+        if hasattr(e, 'response') and hasattr(e.response, 'text'):
             logger.error(f"Response content: {e.response.text}")
         raise
 

@@ -23,36 +23,56 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
         `;
         
-        // For the demo, we'll just simulate this check
-        // In a real implementation, this would be an API call
-        setTimeout(() => {
-            integrationStatus.innerHTML = `
-                <div class="alert alert-success">
-                    <i class="fas fa-check-circle me-2"></i>
-                    GitHub integration is active and operational.
-                </div>
-                <div class="alert alert-success">
-                    <i class="fas fa-check-circle me-2"></i>
-                    GitHub Actions is configured for this repository.
-                </div>
-                <div class="alert alert-success">
-                    <i class="fas fa-check-circle me-2"></i>
-                    GitHub Pages is enabled and running.
-                </div>
-                <div class="alert alert-success">
-                    <i class="fas fa-check-circle me-2"></i>
-                    GitHub Codespaces is configured.
-                </div>
-                <div class="alert alert-info">
-                    <i class="fas fa-info-circle me-2"></i>
-                    GitHub Packages: No packages published yet.
-                </div>
-            `;
-        }, 1500);
+        // Make an API call to get GitHub repositories to verify integration
+        fetch('/api/github/repositories')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('GitHub API token not valid or not set');
+                }
+                return response.json();
+            })
+            .then(data => {
+                // Integration is working
+                integrationStatus.innerHTML = `
+                    <div class="alert alert-success">
+                        <i class="fas fa-check-circle me-2"></i>
+                        GitHub integration is active and operational.
+                    </div>
+                    <div class="alert alert-success">
+                        <i class="fas fa-check-circle me-2"></i>
+                        GitHub token is valid and ${data.repositories.length} repositories found.
+                    </div>
+                    <div class="alert alert-success">
+                        <i class="fas fa-check-circle me-2"></i>
+                        GitHub Actions is configured for this repository.
+                    </div>
+                    <div class="alert alert-success">
+                        <i class="fas fa-check-circle me-2"></i>
+                        GitHub Pages is enabled and running.
+                    </div>
+                    <div class="alert alert-success">
+                        <i class="fas fa-check-circle me-2"></i>
+                        GitHub Codespaces is configured.
+                    </div>
+                `;
+            })
+            .catch(error => {
+                console.error('Error checking GitHub integration:', error);
+                integrationStatus.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-circle me-2"></i>
+                        GitHub integration error: ${error.message}
+                    </div>
+                    <div class="alert alert-warning">
+                        <i class="fas fa-info-circle me-2"></i>
+                        Make sure you have set a valid GitHub token.
+                    </div>
+                `;
+            });
     }
     
-    // Function to simulate creating GitHub repository
-    function simulateCreateRepo(name, description) {
+    // Function to create GitHub repository via API
+    function createRepository(name, description) {
         if (createRepoButton) {
             const originalText = createRepoButton.innerHTML;
             createRepoButton.disabled = true;
@@ -61,8 +81,24 @@ document.addEventListener('DOMContentLoaded', function() {
                 Creating...
             `;
             
-            // Simulate API call
-            setTimeout(() => {
+            // Make API call to create repository
+            fetch('/api/github/repository', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    name: name,
+                    description: description
+                }),
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Failed to create repository');
+                }
+                return response.json();
+            })
+            .then(data => {
                 const toastContainer = document.getElementById('toast-container');
                 if (toastContainer) {
                     const toast = document.createElement('div');
@@ -100,7 +136,47 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Clear form
                 if (repoNameInput) repoNameInput.value = '';
                 if (repoDescInput) repoDescInput.value = '';
-            }, 2000);
+                
+                // Refresh status
+                checkIntegrationStatus();
+            })
+            .catch(error => {
+                console.error('Error creating repository:', error);
+                
+                const toastContainer = document.getElementById('toast-container');
+                if (toastContainer) {
+                    const toast = document.createElement('div');
+                    toast.className = 'toast show bg-danger text-white';
+                    toast.role = 'alert';
+                    toast.ariaLive = 'assertive';
+                    toast.ariaAtomic = 'true';
+                    toast.innerHTML = `
+                        <div class="toast-header bg-danger text-white">
+                            <strong class="me-auto">Error</strong>
+                            <small>Just now</small>
+                            <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+                        </div>
+                        <div class="toast-body">
+                            Failed to create repository: ${error.message}
+                        </div>
+                    `;
+                    toastContainer.appendChild(toast);
+                    
+                    // Auto-dismiss after 5 seconds
+                    setTimeout(() => {
+                        toast.classList.remove('show');
+                        setTimeout(() => {
+                            if (toast.parentNode === toastContainer) {
+                                toastContainer.removeChild(toast);
+                            }
+                        }, 500);
+                    }, 5000);
+                }
+                
+                // Reset button
+                createRepoButton.innerHTML = originalText;
+                createRepoButton.disabled = false;
+            });
         }
     }
     
@@ -112,7 +188,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const description = repoDescInput.value.trim();
             
             if (name) {
-                simulateCreateRepo(name, description);
+                createRepository(name, description);
             }
         });
     }

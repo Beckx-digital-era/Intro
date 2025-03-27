@@ -115,12 +115,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 
                 // Add messages from history
-                data.messages.forEach(msg => {
-                    addMessage(msg.content, msg.isUser);
-                });
-                
-                // If no messages, add a welcome message
-                if (data.messages.length === 0) {
+                if (data.messages && Array.isArray(data.messages)) {
+                    data.messages.forEach(msg => {
+                        // Check if message has required properties
+                        if (msg && typeof msg.content === 'string' && typeof msg.isUser !== 'undefined') {
+                            addMessage(msg.content, msg.isUser);
+                        }
+                    });
+                    
+                    // If no messages, add a welcome message
+                    if (data.messages.length === 0) {
+                        addMessage('Hello! I\'m your DevOps AI assistant. I can help you integrate GitHub and GitLab, set up workflows, and automate DevOps tasks. How can I assist you today?', false);
+                    }
+                } else {
+                    // If messages is not an array, add a welcome message
                     addMessage('Hello! I\'m your DevOps AI assistant. I can help you integrate GitHub and GitLab, set up workflows, and automate DevOps tasks. How can I assist you today?', false);
                 }
             })
