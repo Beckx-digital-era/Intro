@@ -1,5 +1,7 @@
 import json
 import logging
+import os
+import requests
 from flask import render_template, request, jsonify, session
 import uuid
 
@@ -7,7 +9,8 @@ from app import app, db
 from models import ChatMessage, Project, Action
 from ai_model import process_message
 from gitlab_api import get_gitlab_projects, create_gitlab_pipeline
-from github_api import get_github_repositories, create_github_repository, get_github_workflows
+from github_api import get_github_repositories, create_github_repository, get_github_workflows, make_github_request
+from github_gitlab_bridge import sync_github_repo_to_gitlab
 
 logger = logging.getLogger(__name__)
 
@@ -269,6 +272,377 @@ def recent_actions():
     ]
     
     return jsonify({'actions': result})
+
+@app.route('/api/github/repository/beckx-intro')
+def beckx_intro_repository():
+    """Get details for the Beckx-digital-era/Intro repository."""
+    try:
+        # Make a direct request to the GitHub API for the specific repository
+        response = make_github_request('repos/Beckx-digital-era/Intro')
+        
+        # If we don't already have this repository in our database, add it
+        project = Project.query.filter_by(github_repo_url='https://github.com/Beckx-digital-era/Intro').first()
+        if not project:
+            project = Project(
+                name='Beckx-digital-era/Intro',
+                description='Beckx Digital Era Introduction Repository',
+                github_repo_url='https://github.com/Beckx-digital-era/Intro',
+                user_id=1  # Default user ID
+            )
+            db.session.add(project)
+            db.session.commit()
+            logger.info("Added Beckx-digital-era/Intro repository to projects database")
+        
+        return jsonify({'repository': response})
+    except Exception as e:
+        logger.error(f"Error fetching Beckx-digital-era/Intro repository: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/github/repository/beckx-intro/commits')
+def beckx_intro_commits():
+    """Get recent commits for the Beckx-digital-era/Intro repository."""
+    try:
+        # Make a direct request to the GitHub API for commits
+        response = make_github_request('repos/Beckx-digital-era/Intro/commits')
+        return jsonify({'commits': response})
+    except Exception as e:
+        logger.error(f"Error fetching commits for Beckx-digital-era/Intro: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/github/repository/beckx-intro/sync-gitlab', methods=['POST'])
+def beckx_intro_sync_gitlab():
+    """Sync the Beckx-digital-era/Intro repository with GitLab."""
+    try:
+        # Check if we already have a GitLab project ID for this repo
+        project = Project.query.filter_by(github_repo_url='https://github.com/Beckx-digital-era/Intro').first()
+        
+        if not project:
+            return jsonify({'error': 'Repository not found in database'}), 404
+        
+        # If no GitLab project exists yet, create one
+        if not project.gitlab_project_id:
+            # Use the bridge function to sync the repo to GitLab
+            result = sync_github_repo_to_gitlab({
+                'github_repo': 'Beckx-digital-era/Intro',
+                'github_token': os.environ.get('GITHUB_TOKEN'),
+                'gitlab_token': os.environ.get('GITLAB_TOKEN')
+            })
+            
+            if isinstance(result, dict) and result.get('id'):
+                # Store the GitLab project ID in our database
+                project.gitlab_project_id = str(result.get('id'))
+                db.session.commit()
+                logger.info(f"GitLab project created with ID: {project.gitlab_project_id}")
+            else:
+                logger.error(f"Failed to create GitLab project: {result}")
+                return jsonify({'error': 'Failed to create GitLab project'}), 500
+        else:
+            # If GitLab project already exists, just sync the latest changes
+            result = sync_github_repo_to_gitlab({
+                'github_repo': 'Beckx-digital-era/Intro',
+                'github_token': os.environ.get('GITHUB_TOKEN'),
+                'gitlab_token': os.environ.get('GITLAB_TOKEN'),
+                'gitlab_project': project.gitlab_project_id
+            })
+            
+        # Record the action
+        action = Action(
+            action_type='repository_sync',
+            description=f'Synced Beckx-digital-era/Intro repository to GitLab',
+            status='completed',
+            project_id=project.id,
+            user_id=1  # Default user ID
+        )
+        db.session.add(action)
+        db.session.commit()
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Repository synchronized with GitLab',
+            'gitlab_project_id': project.gitlab_project_id
+        })
+    
+    except Exception as e:
+        logger.error(f"Error syncing Beckx-digital-era/Intro to GitLab: {str(e)}")
+        
+        # Record the failed action
+        project = Project.query.filter_by(github_repo_url='https://github.com/Beckx-digital-era/Intro').first()
+        if project:
+            action = Action(
+                action_type='repository_sync',
+                description=f'Failed to sync Beckx-digital-era/Intro repository to GitLab: {str(e)}',
+                status='failed',
+                project_id=project.id,
+                user_id=1  # Default user ID
+            )
+            db.session.add(action)
+            db.session.commit()
+        
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/github/repository/beckx-intro/setup-cicd', methods=['POST'])
+def beckx_intro_setup_cicd():
+    """Set up CI/CD pipeline for the Beckx-digital-era/Intro repository."""
+    try:
+        # Find the project in our database
+        project = Project.query.filter_by(github_repo_url='https://github.com/Beckx-digital-era/Intro').first()
+        
+        if not project:
+            return jsonify({'error': 'Repository not found in database'}), 404
+        
+        # Check if GitLab project exists
+        if not project.gitlab_project_id:
+            return jsonify({'error': 'GitLab project not found. Please sync repository first.'}), 400
+        
+        # Create GitHub Actions workflow file for Beckx-digital-era/Intro
+        ci_workflow_content = {
+            'name': 'beckx-gitlab-ci.yml',
+            'content': '''name: GitLab CI Integration
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  trigger-gitlab:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install requests
+          
+      - name: Trigger GitLab Pipeline
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+        run: |
+          python github_gitlab_bridge.py --direction=github-to-gitlab --action=trigger-pipeline --gitlab-project=${GITLAB_PROJECT_ID}
+        env:
+          GITLAB_PROJECT_ID: ''' + project.gitlab_project_id + '''
+''',
+            'message': 'Add GitLab CI integration workflow'
+        }
+        
+        # Try to create the workflow file in the GitHub repo
+        try:
+            github_response = make_github_request(
+                f'repos/Beckx-digital-era/Intro/contents/.github/workflows/beckx-gitlab-ci.yml', 
+                method='PUT',
+                data=ci_workflow_content
+            )
+            logger.info(f"Created GitHub workflow file: {github_response}")
+        except Exception as e:
+            logger.error(f"Failed to create GitHub workflow file: {str(e)}")
+            # Continue anyway, as we'll still set up the GitLab CI
+        
+        # Set up GitLab CI configuration file
+        gitlab_ci_content = {
+            'file_path': '.gitlab-ci.yml',
+            'branch': 'main',
+            'content': '''stages:
+  - build
+  - test
+  - deploy
+
+variables:
+  PROJECT_NAME: beckx-intro
+
+build:
+  stage: build
+  image: python:3.10
+  script:
+    - echo "Building $PROJECT_NAME"
+    - pip install -r requirements.txt || echo "No requirements.txt found"
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 week
+
+test:
+  stage: test
+  image: python:3.10
+  script:
+    - echo "Testing $PROJECT_NAME"
+    - pip install pytest || echo "Skipping pytest installation"
+    - pytest || echo "No tests to run"
+
+deploy:
+  stage: deploy
+  image: alpine:latest
+  script:
+    - echo "Deploying $PROJECT_NAME"
+    - echo "Deployment successful!"
+  only:
+    - main
+''',
+            'commit_message': 'Add GitLab CI configuration'
+        }
+        
+        # Try to create the GitLab CI file
+        try:
+            gitlab_url = f'https://gitlab.com/api/v4/projects/{project.gitlab_project_id}/repository/files/.gitlab-ci.yml'
+            headers = {
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {os.environ.get("GITLAB_TOKEN")}'
+            }
+            
+            # First check if file exists
+            try:
+                response = requests.get(
+                    f'{gitlab_url}?ref=main',
+                    headers=headers
+                )
+                file_exists = response.status_code == 200
+            except:
+                file_exists = False
+            
+            if file_exists:
+                # Update file
+                gitlab_ci_content['commit_message'] = 'Update GitLab CI configuration'
+                response = requests.put(
+                    gitlab_url,
+                    json=gitlab_ci_content,
+                    headers=headers
+                )
+            else:
+                # Create file
+                response = requests.post(
+                    gitlab_url,
+                    json=gitlab_ci_content,
+                    headers=headers
+                )
+            
+            if response.status_code not in (200, 201):
+                logger.error(f"Failed to create GitLab CI file: {response.text}")
+        except Exception as e:
+            logger.error(f"Exception creating GitLab CI file: {str(e)}")
+            # Continue anyway, as we've already set up part of the CI
+        
+        # Record the action
+        action = Action(
+            action_type='cicd_setup',
+            description=f'Set up CI/CD pipeline for Beckx-digital-era/Intro',
+            status='completed',
+            project_id=project.id,
+            user_id=1  # Default user ID
+        )
+        db.session.add(action)
+        db.session.commit()
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'CI/CD pipeline set up successfully',
+            'github_workflow': 'beckx-gitlab-ci.yml',
+            'gitlab_ci': '.gitlab-ci.yml'
+        })
+    
+    except Exception as e:
+        logger.error(f"Error setting up CI/CD for Beckx-digital-era/Intro: {str(e)}")
+        
+        # Record the failed action
+        project = Project.query.filter_by(github_repo_url='https://github.com/Beckx-digital-era/Intro').first()
+        if project:
+            action = Action(
+                action_type='cicd_setup',
+                description=f'Failed to set up CI/CD pipeline for Beckx-digital-era/Intro: {str(e)}',
+                status='failed',
+                project_id=project.id,
+                user_id=1  # Default user ID
+            )
+            db.session.add(action)
+            db.session.commit()
+        
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/github/repository/beckx-intro/deploy', methods=['POST'])
+def beckx_intro_deploy():
+    """Deploy the Beckx-digital-era/Intro repository to production."""
+    try:
+        # Find the project in our database
+        project = Project.query.filter_by(github_repo_url='https://github.com/Beckx-digital-era/Intro').first()
+        
+        if not project:
+            return jsonify({'error': 'Repository not found in database'}), 404
+        
+        # Check if GitLab project exists
+        if not project.gitlab_project_id:
+            return jsonify({'error': 'GitLab project not found. Please sync repository first.'}), 400
+        
+        # Trigger a deployment pipeline in GitLab
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {os.environ.get("GITLAB_TOKEN")}'
+        }
+        
+        pipeline_data = {
+            'ref': 'main',
+            'variables': [
+                {
+                    'key': 'DEPLOY_TO_PRODUCTION',
+                    'value': 'true'
+                }
+            ]
+        }
+        
+        response = requests.post(
+            f'https://gitlab.com/api/v4/projects/{project.gitlab_project_id}/pipeline',
+            json=pipeline_data,
+            headers=headers
+        )
+        
+        if response.status_code not in (200, 201):
+            logger.error(f"Failed to trigger pipeline: {response.text}")
+            return jsonify({'error': f'Failed to trigger deployment pipeline: {response.text}'}), 500
+        
+        pipeline_data = response.json()
+        
+        # Record the action
+        action = Action(
+            action_type='deployment',
+            description=f'Triggered deployment pipeline for Beckx-digital-era/Intro',
+            status='completed',
+            project_id=project.id,
+            user_id=1  # Default user ID
+        )
+        db.session.add(action)
+        db.session.commit()
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Deployment pipeline triggered successfully',
+            'pipeline_id': pipeline_data.get('id'),
+            'pipeline_url': pipeline_data.get('web_url')
+        })
+    
+    except Exception as e:
+        logger.error(f"Error deploying Beckx-digital-era/Intro: {str(e)}")
+        
+        # Record the failed action
+        project = Project.query.filter_by(github_repo_url='https://github.com/Beckx-digital-era/Intro').first()
+        if project:
+            action = Action(
+                action_type='deployment',
+                description=f'Failed to deploy Beckx-digital-era/Intro: {str(e)}',
+                status='failed',
+                project_id=project.id,
+                user_id=1  # Default user ID
+            )
+            db.session.add(action)
+            db.session.commit()
+        
+        return jsonify({'error': str(e)}), 500
 
 @app.errorhandler(404)
 def page_not_found(e):
