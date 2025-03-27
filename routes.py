@@ -8,6 +8,7 @@ import uuid
 from app import app, db
 from models import ChatMessage, Project, Action
 from ai_model import process_message
+from openai_devops_controller import process_chat_message
 from gitlab_api import get_gitlab_projects, create_gitlab_pipeline
 from github_api import get_github_repositories, create_github_repository, get_github_workflows, make_github_request
 from github_gitlab_bridge import sync_github_repo_to_gitlab
@@ -43,8 +44,19 @@ def chat():
         db.session.add(user_chat)
         db.session.commit()
         
-        # Process message with AI model
-        ai_response = process_message(user_message)
+        # Try to process message with OpenAI DevOps controller first
+        try:
+            response = process_chat_message(user_message, session_id)
+            ai_response = response.get('content', '')
+            
+            # If we got an empty response, fall back to simple AI model
+            if not ai_response:
+                logger.warning("OpenAI controller returned empty response, falling back to basic AI model")
+                ai_response = process_message(user_message)
+        except Exception as e:
+            # If OpenAI processing fails, fall back to simple AI model
+            logger.warning(f"Error using OpenAI controller, falling back to basic AI model: {str(e)}")
+            ai_response = process_message(user_message)
         
         # Save AI response to database
         ai_chat = ChatMessage(
