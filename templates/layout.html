@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DevOps AI System</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-robot me-2"></i>
+                DevOps AI System
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">Home</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#github-section">GitHub</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#gitlab-section">GitLab</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#actions-section">Actions</a>
+                    </li>
+                </ul>
+                <div class="d-flex">
+                    <a href="https://github.com/settings/tokens" target="_blank" class="btn btn-outline-light me-2" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Manage GitHub Tokens">
+                        <i class="fab fa-github"></i> Tokens
+                    </a>
+                    <a href="https://gitlab.com/-/profile/personal_access_tokens" target="_blank" class="btn btn-outline-light" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Manage GitLab Tokens">
+                        <i class="fab fa-gitlab"></i> Tokens
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+    
+    <!-- Main Content -->
+    <main class="container mt-4">
+        {% block content %}{% endblock %}
+    </main>
+    
+    <!-- Footer -->
+    <footer class="bg-dark text-light py-4 mt-5">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5>DevOps AI System</h5>
+                    <p>A comprehensive system integrating GitHub and GitLab with AI-powered automation.</p>
+                </div>
+                <div class="col-md-3">
+                    <h5>Links</h5>
+                    <ul class="list-unstyled">
+                        <li><a href="https://github.com" target="_blank" class="text-light"><i class="fab fa-github me-2"></i>GitHub</a></li>
+                        <li><a href="https://gitlab.com" target="_blank" class="text-light"><i class="fab fa-gitlab me-2"></i>GitLab</a></li>
+                        <li><a href="https://docs.github.com/en/actions" target="_blank" class="text-light"><i class="fas fa-book me-2"></i>GitHub Actions Docs</a></li>
+                        <li><a href="https://docs.gitlab.com/ee/ci/" target="_blank" class="text-light"><i class="fas fa-book me-2"></i>GitLab CI Docs</a></li>
+                    </ul>
+                </div>
+                <div class="col-md-3">
+                    <h5>Resources</h5>
+                    <ul class="list-unstyled">
+                        <li><a href="https://github.com/features/actions" target="_blank" class="text-light"><i class="fas fa-rocket me-2"></i>GitHub Actions</a></li>
+                        <li><a href="https://about.gitlab.com/stages-devops-lifecycle/" target="_blank" class="text-light"><i class="fas fa-code-branch me-2"></i>GitLab DevOps</a></li>
+                    </ul>
+                </div>
+            </div>
+            <hr>
+            <div class="text-center">
+                <p class="mb-0">&copy; 2023 DevOps AI System. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+    
+    <!-- Toast container for notifications -->
+    <div id="toast-container" class="toast-container position-fixed bottom-0 end-0 p-3"></div>
+    
+    <!-- Bootstrap JS Bundle with Popper -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Custom JavaScript -->
+    <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/gitlab-integration.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/github-integration.js') }}"></script>
+    
+    {% block scripts %}{% endblock %}
+</body>
+</html>
