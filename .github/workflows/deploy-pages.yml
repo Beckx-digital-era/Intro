@@ -37,11 +37,30 @@ jobs:
           pip install requests jinja2
           
       - name: Download control interface artifacts
+        id: download_artifacts
         uses: actions/download-artifact@v3
         with:
           name: control-interface
           path: control-interface
         continue-on-error: true
+          
+      - name: Check if control interface was downloaded
+        id: check_download
+        run: |
+          if [ -d "control-interface" ] && [ "$(ls -A control-interface)" ]; then
+            echo "Control interface artifacts found"
+            echo "INTERFACE_FOUND=true" >> $GITHUB_ENV
+          else
+            echo "Control interface artifacts not found, will use fallback template"
+            echo "INTERFACE_FOUND=false" >> $GITHUB_ENV
+          fi
+        
+      - name: Debug artifacts
+        run: |
+          echo "Listing available artifacts:"
+          ls -la
+          echo "Checking control-interface directory:"
+          ls -la control-interface || echo "Control interface directory not found"
           
       - name: Create Control Interface
         run: |
@@ -49,7 +68,7 @@ jobs:
           
           # If we don't have the control interface from the GitLab controller workflow,
           # create a basic one here as a fallback
-          if [ ! -d "control-interface" ] || [ ! -f "control-interface/index.html" ]; then
+          if [[ "$INTERFACE_FOUND" != "true" ]]; then
             echo "Creating fallback control interface..."
             
             cat > gh-pages/index.html << 'EOF'
