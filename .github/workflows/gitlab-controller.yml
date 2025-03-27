@@ -71,6 +71,11 @@ jobs:
           PROJECTS=$(./run_gitlab_controller.sh --action get-projects)
           echo "GITLAB_PROJECTS=$PROJECTS" >> $GITHUB_ENV
           
+          # Define branch to use (always 'main')
+          BRANCH="main"
+          echo "Using branch: $BRANCH"
+          echo "BRANCH=$BRANCH" >> $GITHUB_ENV
+          
           # Parse the first project ID for subsequent steps
           PROJECT_ID=$(echo $PROJECTS | python -c "
           import json
@@ -97,7 +102,8 @@ jobs:
         if: ${{ success() && (github.event.inputs.action == 'sync-repo' || github.event_name == 'push' || github.event_name == 'schedule') }}
         run: |
           echo "Syncing GitHub repository to GitLab..."
-          ./run_gitlab_controller.sh --action sync-github-repo --project-id $GITLAB_PROJECT_ID --github-repo $GITHUB_REPOSITORY
+          echo "Using branch: $BRANCH"
+          ./run_gitlab_controller.sh --action sync-github-repo --project-id $GITLAB_PROJECT_ID --github-repo $GITHUB_REPOSITORY --ref main
         env:
           GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -271,7 +277,7 @@ jobs:
           EOF
           
           # Upload the CI/CD configuration to GitLab
-          ./run_gitlab_controller.sh --action setup-ci-cd --project-id $GITLAB_PROJECT_ID --input-file .gitlab-ci.yml
+          ./run_gitlab_controller.sh --action setup-ci-cd --project-id $GITLAB_PROJECT_ID --input-file .gitlab-ci.yml --ref main
         env:
           GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
       
@@ -622,8 +628,10 @@ jobs:
           GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
       
       - name: Upload Control Interface Artifacts
-        if: ${{ success() && github.event_name == 'push' }}
+        if: ${{ success() }} # Run on all workflow executions, not just pushes
         uses: actions/upload-artifact@v3
         with:
           name: control-interface
           path: control-interface/
+          if-no-files-found: error
+          retention-days: 1 # Keep for 1 day to be available for GitHub Pages workflow
