@@ -192,96 +192,62 @@ jobs:
           
           echo "GitLab CI configuration created successfully"
       
-      - name: Update GitLab CI configurations in GitLab projects
+      - name: Update GitLab CI configurations in GitLab projects using controller
         run: |
-          echo "Updating GitLab CI configurations in GitLab projects..."
-          python - << EOF
-          import os
-          import sys
-          import json
-          import requests
-
-          GITLAB_TOKEN = os.environ.get('GITLAB_TOKEN')
-          if not GITLAB_TOKEN:
-              print("GitLab token not available, skipping GitLab CI update")
-              sys.exit(0)
-
-          try:
-              # Read the GitLab CI configuration file
-              with open('.gitlab-ci.yml', 'r') as f:
-                  gitlab_ci_content = f.read()
-              
-              # Get GitLab projects
-              headers = {
-                  "Authorization": f"Bearer {GITLAB_TOKEN}",
-                  "Content-Type": "application/json"
-              }
-              response = requests.get(
-                  "https://gitlab.com/api/v4/projects",
-                  headers=headers,
-                  params={"membership": True}
-              )
-              response.raise_for_status()
-              projects = response.json()
-              
-              # Update .gitlab-ci.yml in each GitLab project
-              updated_count = 0
-              for project in projects:
-                  project_id = project["id"]
-                  project_name = project["name"]
-                  
-                  try:
-                      # Try to update the file first (if it exists)
-                      try:
-                          # Check if the file exists
-                          file_check = requests.get(
-                              f"https://gitlab.com/api/v4/projects/{project_id}/repository/files/.gitlab-ci.yml",
-                              headers=headers,
-                              params={"ref": "main"}
-                          )
-                          
-                          if file_check.status_code == 200:
-                              # File exists, update it
-                              update_response = requests.put(
-                                  f"https://gitlab.com/api/v4/projects/{project_id}/repository/files/.gitlab-ci.yml",
-                                  headers=headers,
-                                  json={
-                                      "branch": "main",
-                                      "content": gitlab_ci_content,
-                                      "commit_message": "Update CI configuration via GitHub Actions to focus on GitLab hosting"
-                                  }
-                              )
-                              update_response.raise_for_status()
-                              print(f"Updated .gitlab-ci.yml in project {project_name}")
-                              updated_count += 1
-                          else:
-                              # File doesn't exist, create it
-                              create_response = requests.post(
-                                  f"https://gitlab.com/api/v4/projects/{project_id}/repository/files/.gitlab-ci.yml",
-                                  headers=headers,
-                                  json={
-                                      "branch": "main",
-                                      "content": gitlab_ci_content,
-                                      "commit_message": "Create GitLab CI configuration with deployment focus"
-                                  }
-                              )
-                              create_response.raise_for_status()
-                              print(f"Created .gitlab-ci.yml in project {project_name}")
-                              updated_count += 1
-                      except requests.exceptions.RequestException as e:
-                          print(f"Error updating/creating .gitlab-ci.yml in project {project_name}: {str(e)}")
-                          continue
-                  
-                  except Exception as e:
-                      print(f"Error processing project {project_name}: {str(e)}")
-                      continue
-              
-              print(f"Successfully updated {updated_count} GitLab CI configurations")
+          echo "Updating GitLab CI configurations in GitLab projects using GitLab controller..."
           
-          except Exception as e:
-              print(f"Failed to update GitLab CI configurations: {str(e)}")
-              sys.exit(1)
-          EOF
+          # Get all GitLab projects first
+          PROJECTS=$(python gitlab_controller.py --action get-projects)
+          
+          # Read the GitLab CI configuration file
+          if [ -f .gitlab-ci.yml ]; then
+            # For each project, set up CI/CD with our configuration
+            echo "$PROJECTS" | python3 -c "
+import json
+import sys
+import subprocess
+import os
+
+projects = json.load(sys.stdin)
+gitlab_token = os.environ.get('GITLAB_TOKEN')
+success_count = 0
+
+# Read CI config file
+with open('.gitlab-ci.yml', 'r') as f:
+    ci_config = f.read()
+
+for project in projects:
+    project_id = project['id']
+    project_name = project['name']
+    
+    try:
+        print(f'Setting up CI/CD for GitLab project {project_name} (ID: {project_id})...')
+        
+        # Use the GitLab controller to set up CI/CD
+        result = subprocess.run(
+            ['python', 'gitlab_controller.py', 
+             '--action', 'setup-ci-cd',
+             '--project-id', str(project_id),
+             '--content', ci_config
+            ], 
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        
+        print(f'Successfully set up CI/CD for project {project_name}')
+        success_count += 1
+        
+    except subprocess.CalledProcessError as e:
+        print(f'Error setting up CI/CD for project {project_name}: {e.stderr}')
+    except Exception as e:
+        print(f'Error processing project {project_name}: {str(e)}')
+
+print(f'Successfully updated {success_count} GitLab CI configurations')
+"
+          else
+            echo "GitLab CI configuration file (.gitlab-ci.yml) not found"
+          fi
         env:
           GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -386,15 +352,88 @@ jobs:
           
           echo "Application packaged successfully for GitLab deployment"
       
-      - name: Trigger GitLab CI/CD Pipelines for Deployment
+      - name: Trigger GitLab CI/CD Pipelines for Deployment via Controller
         if: success()
         run: |
-          echo "Triggering GitLab CI/CD pipelines for deployment..."
-          python github_gitlab_bridge.py --direction github-to-gitlab --action trigger-pipeline --gitlab-token $GITLAB_TOKEN
+          echo "Triggering GitLab CI/CD pipelines for deployment via GitLab controller..."
+          
+          # Get all GitLab projects first
+          PROJECTS=$(python gitlab_controller.py --action get-projects)
+          
+          # For each project, trigger a pipeline with GitHub context variables
+          echo "$PROJECTS" | python3 -c "
+import json
+import sys
+import subprocess
+import os
+
+projects = json.load(sys.stdin)
+github_repo = os.environ.get('GITHUB_REPOSITORY', '')
+github_run_id = os.environ.get('GITHUB_RUN_ID', '')
+github_workflow = os.environ.get('GITHUB_WORKFLOW', '')
+success_count = 0
+
+for project in projects:
+    project_id = project['id']
+    project_name = project['name']
+    
+    try:
+        print(f'Triggering pipeline for GitLab project {project_name} (ID: {project_id})...')
+        
+        # Create variables JSON for the pipeline
+        variables = json.dumps([
+            {'key': 'GITHUB_INTEGRATION', 'value': 'true'},
+            {'key': 'GITHUB_REPOSITORY', 'value': github_repo},
+            {'key': 'GITHUB_RUN_ID', 'value': github_run_id},
+            {'key': 'GITHUB_WORKFLOW', 'value': github_workflow}
+        ])
+        
+        # First try with variables, which may fail due to permissions
+        try:
+            result = subprocess.run(
+                ['python', 'gitlab_controller.py',
+                 '--action', 'trigger-pipeline',
+                 '--project-id', str(project_id),
+                 '--ref', 'main',
+                 '--variables', variables
+                ],
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            
+            print(f'Successfully triggered pipeline for project {project_name} with variables')
+            success_count += 1
+            
+        except subprocess.CalledProcessError:
+            # If that fails, try without variables
+            result = subprocess.run(
+                ['python', 'gitlab_controller.py',
+                 '--action', 'trigger-pipeline',
+                 '--project-id', str(project_id),
+                 '--ref', 'main'
+                ],
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            
+            print(f'Successfully triggered pipeline for project {project_name} without variables')
+            success_count += 1
+            
+    except subprocess.CalledProcessError as e:
+        print(f'Error triggering pipeline for project {project_name}: {e.stderr}')
+    except Exception as e:
+        print(f'Error processing project {project_name}: {str(e)}')
+
+print(f'Successfully triggered {success_count} GitLab pipelines')
+"
         env:
           GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_WORKFLOW: ${{ github.workflow }}
       
       - name: Upload Deployment Package
         uses: actions/upload-artifact@v3
