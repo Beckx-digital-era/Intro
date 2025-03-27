@@ -34,46 +34,113 @@ jobs:
         run: |
           npm install -g parcel-bundler
       
-      - name: Get GitLab Deployment Information
+      - name: Get GitLab Deployment Information via Controller
         id: get-gitlab-info
         run: |
-          # Collect GitLab deployment information if available
+          # Install dependencies if needed
+          pip install requests
+          
+          # Collect GitLab deployment information if available from event payload
           DEPLOYMENT_URL="${{ github.event.client_payload.deployment_url }}"
           DEPLOYED_AT="${{ github.event.client_payload.deployed_at }}"
           GITLAB_PROJECT="${{ github.event.client_payload.gitlab_project }}"
           DEPLOYMENT_TYPE="${{ github.event.client_payload.deployment_type }}"
           DEPLOYMENT_MESSAGE="${{ github.event.client_payload.message }}"
           
-          # Set default values if not provided
+          # If not available, use GitLab controller to get the information
+          if [ -z "$DEPLOYMENT_URL" ] || [ -z "$GITLAB_PROJECT" ]; then
+            echo "Getting GitLab deployment information using GitLab controller..."
+            
+            # Get all GitLab projects
+            PROJECTS_JSON=$(python gitlab_controller.py --action get-projects)
+            
+            # Get the first GitLab project if available
+            if [ -n "$PROJECTS_JSON" ]; then
+              GITLAB_PROJECT_INFO=$(echo "$PROJECTS_JSON" | python -c "
+import json
+import sys
+
+projects = json.load(sys.stdin)
+if projects and len(projects) > 0:
+    # Get the first project
+    project = projects[0]
+    project_id = project['id']
+    project_path = project['path_with_namespace']
+    project_web_url = project['web_url']
+    pages_url = f'https://{project[\"path_with_namespace\"].replace(\"/\", \".\")}.gitlab.io'
+    
+    print(json.dumps({
+        'id': project_id,
+        'path': project_path,
+        'web_url': project_web_url,
+        'pages_url': pages_url
+    }))
+else:
+    print('{}')
+")
+              
+              if [ -n "$GITLAB_PROJECT_INFO" ] && [ "$GITLAB_PROJECT_INFO" != "{}" ]; then
+                # Extract information from the JSON
+                GITLAB_PROJECT=$(echo "$GITLAB_PROJECT_INFO" | python -c "import json, sys; print(json.load(sys.stdin)['path'])")
+                PROJECT_ID=$(echo "$GITLAB_PROJECT_INFO" | python -c "import json, sys; print(json.load(sys.stdin)['id'])")
+                DEPLOYMENT_URL=$(echo "$GITLAB_PROJECT_INFO" | python -c "import json, sys; print(json.load(sys.stdin)['pages_url'])")
+                
+                echo "Found GitLab project: $GITLAB_PROJECT (ID: $PROJECT_ID)"
+                echo "Using deployment URL: $DEPLOYMENT_URL"
+                
+                # Get the environments for this project
+                ENVIRONMENTS_JSON=$(python gitlab_controller.py --action get-environments --project-id $PROJECT_ID)
+                
+                # Get the latest deployment if available
+                if [ -n "$ENVIRONMENTS_JSON" ]; then
+                  DEPLOYED_AT=$(echo "$ENVIRONMENTS_JSON" | python -c "
+import json
+import sys
+from datetime import datetime
+
+envs = json.load(sys.stdin)
+if envs and len(envs) > 0:
+    # Get the latest updated environment
+    latest_env = max(envs, key=lambda x: x.get('updated_at', ''))
+    print(latest_env.get('updated_at', datetime.utcnow().isoformat()))
+else:
+    print(datetime.utcnow().isoformat())
+")
+                  echo "Found deployment time: $DEPLOYED_AT"
+                else
+                  DEPLOYED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+                  echo "No deployment time found, using current time"
+                fi
+              else
+                GITLAB_PROJECT="your-gitlab-group/your-project"
+                DEPLOYMENT_URL="https://example.gitlab.io/devops-ai"
+                DEPLOYED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+                echo "No GitLab projects found, using placeholders"
+              fi
+            else
+              GITLAB_PROJECT="your-gitlab-group/your-project"
+              DEPLOYMENT_URL="https://example.gitlab.io/devops-ai"
+              DEPLOYED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+              echo "Error fetching GitLab projects, using placeholders"
+            fi
+          else
+            echo "Using GitLab deployment information from event payload"
+          fi
+          
+          # Set default values if still not provided
           if [ -z "$DEPLOYMENT_URL" ]; then
             DEPLOYMENT_URL="https://example.gitlab.io/devops-ai"
-            echo "No deployment URL found, using placeholder"
+            echo "No deployment URL determined, using placeholder"
           fi
           
           if [ -z "$DEPLOYED_AT" ]; then
             DEPLOYED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo "No deployment time determined, using current time"
           fi
           
           if [ -z "$GITLAB_PROJECT" ]; then
-            echo "Checking for available GitLab projects..."
-            if [ -n "${{ secrets.GITLAB_TOKEN }}" ]; then
-              # Try to get the first project from GitLab
-              RESPONSE=$(curl -s -H "Authorization: Bearer ${{ secrets.GITLAB_TOKEN }}" \
-                "https://gitlab.com/api/v4/projects?membership=true&per_page=1")
-              
-              # Check if the response contains at least one project
-              if [ "$(echo $RESPONSE | grep -c "id")" -gt 0 ]; then
-                # Extract the project path with namespace
-                GITLAB_PROJECT=$(echo $RESPONSE | python -c "import sys, json; print(json.load(sys.stdin)[0]['path_with_namespace'])")
-                echo "Found GitLab project: $GITLAB_PROJECT"
-              else
-                GITLAB_PROJECT="your-gitlab-group/your-project"
-                echo "No GitLab projects found, using placeholder"
-              fi
-            else
-              GITLAB_PROJECT="your-gitlab-group/your-project"
-              echo "GitLab token not available, using placeholder project"
-            fi
+            GITLAB_PROJECT="your-gitlab-group/your-project"
+            echo "No GitLab project determined, using placeholder"
           fi
           
           # Save the information to environment variables for later steps
