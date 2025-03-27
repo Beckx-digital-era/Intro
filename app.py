@@ -42,8 +42,31 @@ with app.app_context():
     
     logger.info("Database tables created successfully")
 
-# Register GitLab token from environment variable
-app.config["GITLAB_TOKEN"] = os.environ.get("GITLAB_TOKEN", "")
+# Register GitLab and GitHub tokens from environment variables
+gitlab_token = os.environ.get("GITLAB_TOKEN")
+github_token = os.environ.get("GITHUB_TOKEN")
+
+# Check for alternative environment variable names
+if not github_token:
+    github_token = os.environ.get("GH_TOKEN")
+
+if not gitlab_token:
+    gitlab_token = os.environ.get("GL_TOKEN")
+
+# Add tokens to app configuration
+if github_token:
+    app.config["GITHUB_TOKEN"] = github_token
+    logger.info("GitHub token found in environment variables")
+else:
+    logger.warning("GitHub token not found in environment variables")
+    app.config["GITHUB_TOKEN"] = ""
+
+if gitlab_token:
+    app.config["GITLAB_TOKEN"] = gitlab_token
+    logger.info("GitLab token found in environment variables")
+else:
+    logger.warning("GitLab token not found in environment variables")
+    app.config["GITLAB_TOKEN"] = ""
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
