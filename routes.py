@@ -22,14 +22,7 @@ except ImportError:
     def process_message(message):
         return f"AI Model not available. Your message: {message}"
 
-try:
-    from openai_devops_controller import process_chat_message
-except ImportError:
-    logger = logging.getLogger(__name__)
-    logger.warning("Could not import openai_devops_controller.process_chat_message")
-    
-    def process_chat_message(message, session_id):
-        return {"content": f"OpenAI DevOps Controller not available. Your message: {message}"}
+// OpenAI DevOps Controller removed
 
 try:
     from gitlab_api import get_gitlab_projects, create_gitlab_pipeline

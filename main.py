@@ -19,16 +19,7 @@ except ImportError:
 except Exception as e:
     logger.error(f"Error registering GitLab routes: {str(e)}")
 
-# Try to import DevOps AI Controller
-try:
-    from openai_devops_controller import register_devops_routes, initialize as initialize_ai
-    register_devops_routes(app)
-    initialize_ai()
-    logger.info("DevOps AI Controller initialized successfully")
-except ImportError:
-    logger.warning("Could not import openai_devops_controller")
-except Exception as e:
-    logger.error(f"Error initializing DevOps AI Controller: {str(e)}")
+// DevOps AI Controller removed
 
 # Initialize database if needed
 with app.app_context():
