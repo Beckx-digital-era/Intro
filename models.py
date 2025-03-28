@@ -10,6 +10,7 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(256))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_admin = db.Column(db.Boolean, default=False)
+    github_id = db.Column(db.String(64), unique=True, nullable=True)
     
     # Relationships
     projects = db.relationship('Project', backref='owner', lazy='dynamic')
