@@ -1,19 +1,34 @@
 import os
 import logging
 from app import app, db
-import routes  # This imports and registers all the routes
-from gitlab_routes import register_gitlab_routes
-from openai_devops_controller import register_openai_routes, initialize as initialize_openai
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# Register GitLab routes
-register_gitlab_routes(app)
+# Import routes after initializing app
+import routes  # This imports and registers all the routes
 
-# Register OpenAI DevOps Controller routes
-register_openai_routes(app)
+# Try to import GitLab routes
+try:
+    from gitlab_routes import register_gitlab_routes
+    register_gitlab_routes(app)
+    logger.info("GitLab routes registered successfully")
+except ImportError:
+    logger.warning("Could not import gitlab_routes")
+except Exception as e:
+    logger.error(f"Error registering GitLab routes: {str(e)}")
+
+# Try to import OpenAI DevOps Controller
+try:
+    from openai_devops_controller import register_openai_routes, initialize as initialize_openai
+    register_openai_routes(app)
+    initialize_openai()
+    logger.info("OpenAI DevOps Controller initialized successfully")
+except ImportError:
+    logger.warning("Could not import openai_devops_controller")
+except Exception as e:
+    logger.error(f"Error initializing OpenAI DevOps Controller: {str(e)}")
 
 # Initialize database if needed
 with app.app_context():
@@ -40,9 +55,6 @@ if os.environ.get("OPENAI_API_KEY"):
     logger.info("OpenAI API key found in environment variables")
 else:
     logger.warning("OpenAI API key not found in environment variables")
-
-# Initialize OpenAI DevOps Controller
-initialize_openai()
 
 # Print startup message with GitHub integration info
 logger.info("=" * 80)

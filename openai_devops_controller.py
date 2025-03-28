@@ -10,17 +10,14 @@ The controller acts as the top-level intelligence layer that coordinates all pla
 
 import os
 import json
-import time
 import logging
-import base64
 from datetime import datetime
-from functools import wraps
 from flask import session, request, jsonify
-from collections import deque
-from openai import OpenAI
+import random
+from ai_model import find_most_similar_query, RESPONSES
 
-# Import our secure API modules
-from secure_api_auth import make_secure_github_request, make_secure_gitlab_request
+# Import for our fallback AI capabilities
+from ai_model import process_message as ai_model_process_message
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -30,12 +27,6 @@ logger = logging.getLogger(__name__)
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     logger.warning("OPENAI_API_KEY not found in environment variables")
-
-# Default to GPT-4 but allow configuration
-# The newest OpenAI model is "gpt-4o" which was released May 13, 2024.
-# Do not change this unless explicitly requested by the user
-DEFAULT_MODEL = "gpt-4o"
-OPENAI_MODEL = os.environ.get("OPENAI_MODEL", DEFAULT_MODEL)
 
 # Maximum conversation history to maintain
 MAX_CONVERSATION_HISTORY = 20
