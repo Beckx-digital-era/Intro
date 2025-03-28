@@ -303,6 +303,31 @@ def chat():
         logger.error(f"Error in chat endpoint: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/chat/history')
+def chat_history():
+    """Retrieve chat history for the current session."""
+    try:
+        session_id = session.get('session_id', str(uuid.uuid4()))
+        
+        # Get chat messages for this session, ordered by timestamp
+        messages = ChatMessage.query.filter_by(session_id=session_id).order_by(ChatMessage.timestamp).all()
+        
+        # Format messages for the response
+        formatted_messages = [
+            {
+                'id': message.id,
+                'content': message.content,
+                'isUser': message.is_user,
+                'timestamp': message.timestamp.isoformat()
+            } for message in messages
+        ]
+        
+        return jsonify({'messages': formatted_messages})
+    
+    except Exception as e:
+        logger.error(f"Error retrieving chat history: {str(e)}")
+        return jsonify({'error': str(e), 'messages': []}), 500
+
 
 
 @app.route('/api/gitlab/projects')
@@ -908,6 +933,35 @@ def download_backup():
                         file_path = os.path.join(root, file)
                         # Add the file to the zip with a relative path
                         zipf.write(file_path, os.path.relpath(file_path, '.'))
+            
+            # Add a README file with timestamp and guidance
+            readme_content = f"""# DevOps AI System Backup
+
+This backup was generated on {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+## GitHub Backup Instructions
+
+To restore this backup to a GitHub repository:
+
+1. Extract this ZIP file
+2. Create a new GitHub repository or use an existing one
+3. Push the extracted files to the repository:
+
+```bash
+git init
+git add .
+git commit -m "Initial commit from backup {datetime.datetime.now().strftime("%Y%m%d")}"
+git branch -M main
+git remote add origin https://github.com/your-username/your-repo.git
+git push -u origin main
+```
+
+## Contents
+
+This backup contains all source code, templates, configurations, and assets 
+for the DevOps AI System that integrates GitHub and GitLab platforms.
+"""
+            zipf.writestr('README_BACKUP.md', readme_content)
         
         # Add a timestamp to the response headers
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -934,6 +988,61 @@ def download_backup():
     
     except Exception as e:
         logger.error(f"Error creating backup: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/backup-to-github', methods=['POST'])
+@login_required
+def backup_to_github():
+    """Backup the project directly to a GitHub repository."""
+    try:
+        data = request.json
+        repo_name = data.get('repo_name')
+        
+        if not repo_name:
+            return jsonify({'error': 'Repository name is required'}), 400
+        
+        # Create a new GitHub repository
+        try:
+            repo_result = create_github_repository(
+                name=repo_name,
+                description="DevOps AI System Backup - Created from the application",
+                private=True
+            )
+            
+            if isinstance(repo_result, dict) and repo_result.get('html_url'):
+                # Record the successful action
+                action = Action(
+                    action_type='github_backup',
+                    description=f'Created GitHub backup repository: {repo_name}',
+                    status='completed',
+                    project_id=1,  # Default project ID
+                    user_id=current_user.id
+                )
+                db.session.add(action)
+                db.session.commit()
+                
+                # Return success with repository URL and instructions
+                return jsonify({
+                    'success': True,
+                    'repo_url': repo_result['html_url'],
+                    'message': f'GitHub repository created successfully. The application code needs to be pushed separately.'
+                })
+            else:
+                return jsonify({
+                    'error': 'Failed to create GitHub repository',
+                    'details': repo_result
+                }), 500
+        
+        except Exception as repo_error:
+            logger.error(f"Error creating GitHub repository: {str(repo_error)}")
+            return jsonify({
+                'error': 'Failed to create GitHub repository',
+                'details': str(repo_error)
+            }), 500
+    
+    except Exception as e:
+        logger.error(f"Error backing up to GitHub: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 

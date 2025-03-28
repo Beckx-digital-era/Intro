@@ -48,7 +48,7 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/download-backup" id="download-backup-link">
+                        <a class="nav-link text-info" href="/download-backup" id="download-backup-link">
                             <i class="fas fa-download me-1"></i>Download Backup
                         </a>
                     </li>
@@ -110,6 +110,52 @@
     
     <!-- Toast container for notifications -->
     <div id="toast-container" class="toast-container position-fixed bottom-0 end-0 p-3"></div>
+    
+    <!-- Backup Options Modal -->
+    <div class="modal fade" id="backupOptionsModal" tabindex="-1" aria-labelledby="backupOptionsModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content bg-dark text-light">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="backupOptionsModalLabel">Backup Options</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Select a backup method for your DevOps AI System:</p>
+                    
+                    <div class="card bg-dark border-info mb-3">
+                        <div class="card-header text-info">
+                            <i class="fas fa-download me-2"></i> Download Zip Archive
+                        </div>
+                        <div class="card-body">
+                            <p class="card-text">Download a complete zip archive of the project files to your local computer.</p>
+                            <button id="downloadZipBtn" class="btn btn-info">
+                                <i class="fas fa-file-archive me-2"></i> Download Zip
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="card bg-dark border-primary">
+                        <div class="card-header text-primary">
+                            <i class="fab fa-github me-2"></i> Backup to GitHub
+                        </div>
+                        <div class="card-body">
+                            <p class="card-text">Create a new private GitHub repository to store your project backup.</p>
+                            <div class="mb-3">
+                                <label for="githubRepoName" class="form-label">Repository Name</label>
+                                <input type="text" class="form-control" id="githubRepoName" placeholder="my-devops-backup">
+                            </div>
+                            <button id="createGithubRepoBtn" class="btn btn-primary">
+                                <i class="fab fa-github me-2"></i> Create GitHub Repository
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
     
     <!-- Bootstrap JS Bundle with Popper -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -234,6 +280,94 @@
                 handleAdminLogin();
             }
         });
+        
+        // Get backup-related elements
+        const backupModal = new bootstrap.Modal(document.getElementById('backupOptionsModal'));
+        const downloadZipBtn = document.getElementById('downloadZipBtn');
+        const createGithubRepoBtn = document.getElementById('createGithubRepoBtn');
+        const githubRepoNameInput = document.getElementById('githubRepoName');
+        
+        // Show the backup options modal when clicking the download link
+        if (downloadBackupLink) {
+            downloadBackupLink.addEventListener('click', function(e) {
+                e.preventDefault();
+                backupModal.show();
+            });
+        }
+        
+        // Handle zip download button in the modal
+        if (downloadZipBtn) {
+            downloadZipBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                
+                // Hide the modal
+                backupModal.hide();
+                
+                // Show download starting message
+                showToast('Backup', 'Preparing backup file for download...', 'info');
+                
+                // Start the download
+                const downloadStartTime = new Date();
+                window.location.href = '/download-backup';
+                
+                // Show success message after a short delay to ensure the download started
+                setTimeout(() => {
+                    const elapsedTime = Math.round((new Date() - downloadStartTime) / 1000);
+                    showToast('Success', `Backup file download initiated! (Prepared in ${elapsedTime}s)`, 'success');
+                }, 1500);
+            });
+        }
+        
+        // Handle GitHub repository creation
+        if (createGithubRepoBtn) {
+            createGithubRepoBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                
+                const repoName = githubRepoNameInput.value.trim();
+                
+                if (!repoName) {
+                    showToast('Error', 'Please enter a repository name', 'danger');
+                    return;
+                }
+                
+                // Disable button and show loading state
+                createGithubRepoBtn.disabled = true;
+                createGithubRepoBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Creating...';
+                
+                // Make API request to create GitHub repository
+                fetch('/backup-to-github', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ repo_name: repoName })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Hide the modal
+                    backupModal.hide();
+                    
+                    if (data.success) {
+                        // Show success message with repo URL
+                        showToast('Success', `GitHub repository created! <a href="${data.repo_url}" target="_blank" class="text-white text-decoration-underline">Open Repository</a>`, 'success');
+                    } else {
+                        showToast('Error', data.error || 'Failed to create GitHub repository', 'danger');
+                    }
+                })
+                .catch(error => {
+                    console.error('GitHub repo creation error:', error);
+                    showToast('Error', 'Failed to create GitHub repository', 'danger');
+                })
+                .finally(() => {
+                    // Reset button state
+                    createGithubRepoBtn.disabled = false;
+                    createGithubRepoBtn.innerHTML = '<i class="fab fa-github me-2"></i> Create GitHub Repository';
+                    
+                    // Clear the input
+                    githubRepoNameInput.value = '';
+                });
+            });
+        }
     });
     </script>
     

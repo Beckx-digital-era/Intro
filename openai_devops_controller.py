@@ -1,8 +1,8 @@
 """
-OpenAI DevOps Controller
+DevOps AI Controller
 
 This module provides a centralized AI-powered control system for the DevOps platform.
-It uses OpenAI's capabilities to understand user requests, manage authentication,
+It uses a local AI model to understand user requests, manage authentication,
 and orchestrate operations across GitHub and GitLab platforms.
 
 The controller acts as the top-level intelligence layer that coordinates all platform activities.
@@ -11,22 +11,18 @@ The controller acts as the top-level intelligence layer that coordinates all pla
 import os
 import json
 import logging
+import time
 from datetime import datetime
 from flask import session, request, jsonify
 import random
-from ai_model import find_most_similar_query, RESPONSES
-
-# Import for our fallback AI capabilities
-from ai_model import process_message as ai_model_process_message
+from ai_model import find_most_similar_query, RESPONSES, process_message
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configure OpenAI
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
-    logger.warning("OPENAI_API_KEY not found in environment variables")
+# No API key required for local AI model
+logger.info("Using local AI model for DevOps controller")
 
 # Maximum conversation history to maintain
 MAX_CONVERSATION_HISTORY = 20
@@ -42,20 +38,13 @@ class DevOpsIntelligence:
         """Initialize the DevOps Intelligence system.
         
         Args:
-            api_key (str, optional): OpenAI API key. If not provided, 
-                                     will use environment variable.
+            api_key (str, optional): Not used, kept for backward compatibility.
         """
-        self.api_key = api_key or OPENAI_API_KEY
-        self.model = OPENAI_MODEL
         self.system_prompt = self._create_system_prompt()
         self.max_retries = 3
         self.retry_delay = 2  # seconds
         
-        if not self.api_key:
-            logger.error("No OpenAI API key provided. AI features will not function.")
-        
-        # Create OpenAI client
-        self.client = OpenAI(api_key=self.api_key)
+        logger.info("Using local AI model for DevOps operations")
     
     def _create_system_prompt(self):
         """Create the system prompt for the DevOps AI assistant."""
@@ -94,64 +83,23 @@ class DevOpsIntelligence:
         Returns:
             dict: AI response with content and any operation details
         """
-        if not self.api_key:
-            return {
-                "content": "AI features are not available. Please set the OPENAI_API_KEY environment variable.",
-                "error": "No API key provided"
-            }
-        
         # Get or initialize conversation history
         if not conversation_history:
             conversation_history = self.get_conversation_history(session_id)
         
-        # Prepare messages for the API call
-        messages = [{"role": "system", "content": self.system_prompt}]
-        
-        # Add conversation history
-        for msg in conversation_history:
-            messages.append(msg)
-        
-        # Add the current user message
-        messages.append({"role": "user", "content": user_message})
-        
-        # Make the API call with retries
-        response_content = None
-        error = None
-        
-        for attempt in range(self.max_retries):
-            try:
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    temperature=0.7,
-                    max_tokens=2000,
-                )
-                
-                response_content = response.choices[0].message.content
-                break
+        # Use the local AI model to process the message
+        try:
+            # First try our enhanced model
+            response_content = process_message(user_message)
             
-            except Exception as e:
-                logger.error(f"Error calling OpenAI API (attempt {attempt+1}): {str(e)}")
-                error = str(e)
-                
-                if attempt < self.max_retries - 1:
-                    time.sleep(self.retry_delay * (attempt + 1))  # Exponential backoff
-        
-        if not response_content:
-            # Provide a more detailed fallback response since OpenAI API is unavailable
-            fallback_content = (
-                f"I'm having trouble connecting to the OpenAI services. Error: {error}\n\n"
-                "However, I can still help with basic DevOps operations. Here are some things I can do:\n"
-                "1. Create or manage GitHub repositories\n"
-                "2. Set up GitLab projects and pipelines\n"
-                "3. Synchronize repositories between GitHub and GitLab\n"
-                "4. Manage CI/CD workflows\n\n"
-                "Just let me know what you need help with, and I'll do my best to assist using the available services."
-            )
-            return {
-                "content": fallback_content,
-                "error": error
-            }
+            # Format the response as if it came from a sophisticated AI
+            if "github" in user_message.lower() or "gitlab" in user_message.lower():
+                # Add DevOps context to the response
+                response_content = self._enhance_response_with_devops_context(user_message, response_content)
+        except Exception as e:
+            logger.error(f"Error using local AI model: {str(e)}")
+            # Provide a fallback response
+            response_content = "I understand you're asking about DevOps operations. I can help with GitHub and GitLab integrations, CI/CD pipelines, and cross-platform automation. Could you please be more specific about what you need help with?"
         
         # Update conversation history
         conversation_history.append({"role": "user", "content": user_message})
@@ -171,6 +119,29 @@ class DevOpsIntelligence:
             "content": response_content,
             "operations": operations
         }
+    
+    def _enhance_response_with_devops_context(self, user_message, basic_response):
+        """Add DevOps context to a basic response to make it more useful."""
+        # Check if message is related to GitHub
+        if "github" in user_message.lower():
+            if "repository" in user_message.lower() or "repo" in user_message.lower():
+                return f"{basic_response}\n\nFor GitHub repositories, I can help you with creation, management, and setting up workflows. GitHub uses REST API endpoints like `/user/repos` for repository operations."
+            if "workflow" in user_message.lower() or "action" in user_message.lower():
+                return f"{basic_response}\n\nGitHub Actions workflows are defined in YAML files in the `.github/workflows` directory. I can help you create and manage these workflows through the GitHub API."
+        
+        # Check if message is related to GitLab
+        if "gitlab" in user_message.lower():
+            if "project" in user_message.lower():
+                return f"{basic_response}\n\nFor GitLab projects, I can help with creation and configuration. GitLab uses REST API endpoints like `/projects` for project operations."
+            if "pipeline" in user_message.lower() or "ci" in user_message.lower() or "cd" in user_message.lower():
+                return f"{basic_response}\n\nGitLab CI/CD pipelines are defined in `.gitlab-ci.yml` files. I can help you create and manage these pipelines through the GitLab API."
+        
+        # Check if message is related to both platforms
+        if "github" in user_message.lower() and "gitlab" in user_message.lower():
+            if "sync" in user_message.lower() or "integration" in user_message.lower() or "connect" in user_message.lower():
+                return f"{basic_response}\n\nFor synchronizing GitHub and GitLab, we can use API integrations and webhooks to create cross-platform workflows. This helps maintain consistency across platforms and allows for unified DevOps orchestration."
+        
+        return basic_response
     
     def extract_operations(self, content):
         """Extract any operations mentioned in the AI response.
@@ -511,14 +482,14 @@ class DevOpsOrchestrator:
 
 
 # Create instances for global use
-intelligence = DevOpsIntelligence(api_key=OPENAI_API_KEY)
+intelligence = DevOpsIntelligence()
 orchestrator = DevOpsOrchestrator(intelligence)
 
 
 def process_chat_message(user_message, session_id=None):
-    """Process a user message through the OpenAI DevOps controller.
+    """Process a user message through the DevOps AI controller.
     
-    This function takes a user message, routes it through the AI intelligence
+    This function takes a user message, routes it through the local AI intelligence
     system, and determines what operations (if any) to perform.
     
     Args:
@@ -533,7 +504,17 @@ def process_chat_message(user_message, session_id=None):
         session_id = str(datetime.now().timestamp())
     
     # Get AI response
-    ai_response = intelligence.get_ai_response(user_message, session_id)
+    try:
+        ai_response = intelligence.get_ai_response(user_message, session_id)
+    except Exception as e:
+        # Fallback to basic AI model if any issues
+        logger.error(f"Error from main AI model: {str(e)}")
+        # Simple fallback response
+        response_text = process_message(user_message)
+        ai_response = {
+            "content": response_text,
+            "operations": []
+        }
     
     # Check if there are operations to perform
     operations_results = []
@@ -571,36 +552,32 @@ def process_chat_message(user_message, session_id=None):
     return response
 
 
-def validate_openai_token():
-    """Validate the OpenAI API token.
+def validate_ai_model():
+    """Validate the AI model availability.
     
     Returns:
-        bool: True if the token is valid, False otherwise
+        bool: True if the local AI model is available, False otherwise
     """
-    if not OPENAI_API_KEY:
-        return False
-    
     try:
-        # Make a simple API call to check if the token is valid
-        client = OpenAI(api_key=OPENAI_API_KEY)
-        models = client.models.list()
-        return len(models.data) > 0
+        # Check if our local AI model is functioning
+        test_response = process_message("Hello, are you working?")
+        return len(test_response) > 0
     except Exception as e:
-        logger.error(f"Error validating OpenAI token: {str(e)}")
+        logger.error(f"Error validating local AI model: {str(e)}")
         return False
 
 
-# Flask routes for the OpenAI DevOps controller
+# Flask routes for the DevOps AI controller
 
-def register_openai_routes(app):
-    """Register OpenAI DevOps controller routes with Flask app.
+def register_devops_routes(app):
+    """Register DevOps AI controller routes with Flask app.
     
     Args:
         app: Flask application
     """
-    @app.route('/api/openai/chat', methods=['POST'])
-    def openai_chat_endpoint():
-        """API endpoint for OpenAI chat messages."""
+    @app.route('/api/devops/chat', methods=['POST'])
+    def devops_chat_endpoint():
+        """API endpoint for DevOps AI chat messages."""
         data = request.json
         user_message = data.get('message', '')
         session_id = data.get('session_id') or session.get('session_id')
@@ -613,15 +590,15 @@ def register_openai_routes(app):
         
         return jsonify(response)
     
-    @app.route('/api/openai/validate', methods=['GET'])
-    def validate_openai_token_route():
-        """Validate the OpenAI API token."""
-        is_valid = validate_openai_token()
+    @app.route('/api/devops/validate', methods=['GET'])
+    def validate_ai_token_route():
+        """Validate the AI model availability."""
+        is_valid = validate_ai_model()
         return jsonify({"valid": is_valid})
     
-    @app.route('/api/openai/history', methods=['GET'])
-    def openai_chat_history():
-        """Get OpenAI chat history for the current session."""
+    @app.route('/api/devops/history', methods=['GET'])
+    def devops_chat_history():
+        """Get DevOps AI chat history for the current session."""
         session_id = session.get('session_id')
         if not session_id:
             return jsonify({"history": []})
@@ -638,9 +615,9 @@ def register_openai_routes(app):
         
         return jsonify({"history": formatted_history})
     
-    @app.route('/api/openai/clear', methods=['POST'])
-    def clear_openai_chat():
-        """Clear OpenAI chat history for the current session."""
+    @app.route('/api/devops/clear', methods=['POST'])
+    def clear_devops_chat():
+        """Clear DevOps AI chat history for the current session."""
         session_id = session.get('session_id')
         if session_id:
             intelligence.clear_conversation_history(session_id)
@@ -650,17 +627,14 @@ def register_openai_routes(app):
 
 # Initialization
 def initialize():
-    """Initialize the OpenAI DevOps controller.
+    """Initialize the DevOps AI controller.
     
     This function should be called during application startup.
     """
-    if not OPENAI_API_KEY:
-        logger.warning("OPENAI_API_KEY environment variable not set. AI features will be limited.")
+    valid = validate_ai_model()
+    if valid:
+        logger.info("Local AI model initialized successfully.")
     else:
-        valid = validate_openai_token()
-        if valid:
-            logger.info("OpenAI API token is valid.")
-        else:
-            logger.warning("OpenAI API token validation failed.")
+        logger.warning("Local AI model validation failed. Check the AI model implementation.")
     
-    logger.info("OpenAI DevOps controller initialized.")
+    logger.info("DevOps AI controller initialized.")
