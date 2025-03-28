@@ -10,6 +10,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 from app import app, db, login_manager
 from models import ChatMessage, Project, Action, User
+from github_auth import get_github_login_url, get_github_token_from_code, get_github_user_info
 
 # Import these conditionally to handle potential import errors
 try:
@@ -327,6 +328,87 @@ def chat_history():
     except Exception as e:
         logger.error(f"Error retrieving chat history: {str(e)}")
         return jsonify({'error': str(e), 'messages': []}), 500
+
+
+@app.route('/login/github')
+def github_login():
+    """Redirect to GitHub for authentication."""
+    # Get the GitHub OAuth login URL
+    login_url = get_github_login_url()
+    
+    if not login_url:
+        flash('GitHub authentication is not configured properly', 'danger')
+        return redirect(url_for('login'))
+    
+    return redirect(login_url)
+
+
+@app.route('/login/github/callback')
+def github_callback():
+    """Handle OAuth callback from GitHub."""
+    # Verify state to prevent CSRF
+    state = request.args.get('state')
+    session_state = session.pop('github_oauth_state', None)
+    
+    if not state or state != session_state:
+        flash('Authentication failed: Invalid state parameter', 'danger')
+        return redirect(url_for('login'))
+    
+    # Get the authorization code
+    code = request.args.get('code')
+    if not code:
+        flash('Authentication failed: No authorization code received', 'danger')
+        return redirect(url_for('login'))
+    
+    # Exchange code for access token
+    access_token = get_github_token_from_code(code)
+    if not access_token:
+        flash('Authentication failed: Could not obtain access token', 'danger')
+        return redirect(url_for('login'))
+    
+    # Store token in session
+    session['github_token'] = access_token
+    
+    # Get user info from GitHub
+    user_info = get_github_user_info(access_token)
+    if not user_info:
+        flash('Authentication failed: Could not retrieve user information', 'danger')
+        return redirect(url_for('login'))
+    
+    # Check if user exists in our database
+    github_username = user_info.get('login')
+    github_email = user_info.get('email')
+    github_id = str(user_info.get('id'))
+    
+    # Try to find user by GitHub ID, username, or email
+    user = User.query.filter_by(github_id=github_id).first()
+    
+    if not user and github_email:
+        # Try to find by email
+        user = User.query.filter_by(email=github_email).first()
+    
+    if not user:
+        # User doesn't exist, create a new one
+        user = User(
+            username=github_username,
+            email=github_email or f"{github_username}@github.com",
+            github_id=github_id,
+            password_hash=generate_password_hash(os.urandom(16).hex())  # Random password
+        )
+        db.session.add(user)
+        db.session.commit()
+    else:
+        # Update GitHub ID if not set
+        if not user.github_id:
+            user.github_id = github_id
+            db.session.commit()
+    
+    # Log in the user
+    login_user(user)
+    
+    # Redirect to the next URL or index
+    next_url = session.pop('next_url', url_for('index'))
+    return redirect(next_url)
 
 
 
