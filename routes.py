@@ -866,6 +866,77 @@ def beckx_intro_deploy():
         
         return jsonify({'error': str(e)}), 500
 
+
+@app.route('/download-backup')
+@login_required
+def download_backup():
+    """Generate and download a ZIP file with the entire program codebase for GitHub backup."""
+    try:
+        import os
+        import tempfile
+        import zipfile
+        import shutil
+        import datetime
+        from flask import send_file
+        
+        # Create a temporary directory to store the files
+        temp_dir = tempfile.mkdtemp()
+        zip_path = os.path.join(temp_dir, 'devops_ai_backup.zip')
+        
+        # File types to include in the backup
+        include_extensions = (
+            '.py', '.html', '.css', '.js', '.yml', '.yaml', '.json', '.md', 
+            '.txt', '.ini', '.cfg', '.toml', '.sql', '.sh', '.bat', '.ps1', 
+            '.nix', '.env'
+        )
+        
+        # Directories to exclude from the backup
+        exclude_dirs = (
+            '.git', '__pycache__', '.venv', 'venv', 'node_modules', 
+            '.pytest_cache', '.mypy_cache', '.ipynb_checkpoints', '.env'
+        )
+        
+        # Create a zip file
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            # Add all relevant files from the root directory
+            for root, dirs, files in os.walk('.'):
+                # Skip excluded directories
+                dirs[:] = [d for d in dirs if d not in exclude_dirs and not d.startswith('.')]
+                
+                for file in files:
+                    if file.lower().endswith(include_extensions) or '.' not in file:
+                        file_path = os.path.join(root, file)
+                        # Add the file to the zip with a relative path
+                        zipf.write(file_path, os.path.relpath(file_path, '.'))
+        
+        # Add a timestamp to the response headers
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Log the backup action
+        if current_user.is_authenticated:
+            action = Action(
+                action_type='backup_download',
+                description=f'Downloaded program backup at {timestamp}',
+                status='completed',
+                project_id=1,  # Default project ID
+                user_id=current_user.id
+            )
+            db.session.add(action)
+            db.session.commit()
+        
+        # Send the file to the user
+        return send_file(
+            zip_path,
+            as_attachment=True,
+            download_name=f'devops_ai_backup_{timestamp}.zip',
+            mimetype='application/zip'
+        )
+    
+    except Exception as e:
+        logger.error(f"Error creating backup: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.errorhandler(404)
 def page_not_found(e):
     return render_template('index.html'), 404

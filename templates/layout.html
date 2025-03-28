@@ -120,11 +120,12 @@
     <script src="{{ url_for('static', filename='js/github-integration.js') }}"></script>
     <script src="{{ url_for('static', filename='js/beckx-integration.js') }}"></script>
     
-    <!-- Admin Key Login Script -->
+    <!-- Admin Key Login Script & Download Backup Script -->
     <script>
     document.addEventListener('DOMContentLoaded', function() {
         const adminKeyInput = document.getElementById('admin-key');
         const adminLoginBtn = document.getElementById('admin-login-btn');
+        const downloadBackupLink = document.getElementById('download-backup-link');
         
         function showToast(title, message, type = 'info') {
             const toastId = 'toast-' + Date.now();
