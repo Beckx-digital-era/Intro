@@ -5,23 +5,66 @@ import requests
 import subprocess
 import uuid
 from flask import render_template, request, jsonify, session, redirect, url_for, flash
-from flask_login import LoginManager, login_user, login_required, logout_user, current_user
+from flask_login import login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from app import app, db
+from app import app, db, login_manager
 from models import ChatMessage, Project, Action, User
-from ai_model import process_message
-from openai_devops_controller import process_chat_message
-from gitlab_api import get_gitlab_projects, create_gitlab_pipeline
-from github_api import get_github_repositories, create_github_repository, get_github_workflows, make_github_request
-from github_gitlab_bridge import sync_github_repo_to_gitlab
+
+# Import these conditionally to handle potential import errors
+try:
+    from ai_model import process_message
+except ImportError:
+    logger = logging.getLogger(__name__)
+    logger.warning("Could not import ai_model.process_message")
+    
+    def process_message(message):
+        return f"AI Model not available. Your message: {message}"
+
+try:
+    from openai_devops_controller import process_chat_message
+except ImportError:
+    logger = logging.getLogger(__name__)
+    logger.warning("Could not import openai_devops_controller.process_chat_message")
+    
+    def process_chat_message(message, session_id):
+        return {"content": f"OpenAI DevOps Controller not available. Your message: {message}"}
+
+try:
+    from gitlab_api import get_gitlab_projects, create_gitlab_pipeline
+except ImportError:
+    logger = logging.getLogger(__name__)
+    logger.warning("Could not import gitlab_api functions")
+    
+    def get_gitlab_projects():
+        return {"status": "error", "message": "GitLab API module not available"}
+        
+    def create_gitlab_pipeline(project_id, ref="main"):
+        return {"status": "error", "message": "GitLab API module not available"}
+
+try:
+    from github_api import get_github_repositories, create_github_repository, get_github_workflows, make_github_request
+    from github_gitlab_bridge import sync_github_repo_to_gitlab
+except ImportError:
+    logger = logging.getLogger(__name__)
+    logger.warning("Could not import github_api functions")
+    
+    def get_github_repositories():
+        return []
+        
+    def create_github_repository(name, description="", private=False):
+        return {"status": "error", "message": "GitHub API module not available"}
+        
+    def get_github_workflows(owner, repo):
+        return []
+        
+    def make_github_request(endpoint, method="GET", data=None, params=None):
+        return {"status": "error", "message": "GitHub API module not available"}
+    
+    def sync_github_repo_to_gitlab(github_repo, gitlab_project_id):
+        return {"status": "error", "message": "GitHub-GitLab bridge not available"}
 
 logger = logging.getLogger(__name__)
-
-# Set up Flask Login
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = 'login'
 
 @login_manager.user_loader
 def load_user(user_id):

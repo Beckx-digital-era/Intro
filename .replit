@@ -1,4 +1,4 @@
-modules = ["python-3.11"]
+modules = ["python-3.11", "gcloud", "nodejs-23", "nodejs-22", "nodejs-20", "nodejs-19", "nodejs-18", "nodejs-16", "nodejs-14", "postgresql-17", "postgresql-16", "python-3.9", "python-3.8", "python-base-3.13", "python-3.12", "python-base-3.12", "python-base-3.11", "python-3.10", "ruby-3.1", "ruby-3.2", "typescript-language-server", "docker"]
 
 [nix]
 channel = "stable-24_05"

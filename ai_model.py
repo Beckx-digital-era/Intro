@@ -1,26 +1,13 @@
 import os
 import logging
-import pickle
-import spacy
-import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.naive_bayes import MultinomialNB
-from sklearn.pipeline import Pipeline
+import random
 from pathlib import Path
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# Load spaCy model
-try:
-    nlp = spacy.load("en_core_web_sm")
-except OSError:
-    logger.warning("Downloading spaCy model...")
-    os.system("python -m spacy download en_core_web_sm")
-    nlp = spacy.load("en_core_web_sm")
-
-# Model file path
+# Model file path (not used in this simplified version)
 MODEL_PATH = Path("ai_model.pkl")
 
 # Sample training data for DevOps assistant
@@ -107,67 +94,50 @@ RESPONSES = {
     "project_create": "I can help you create a new project across GitHub and GitLab with synchronized repositories. Would you like me to walk you through the process?"
 }
 
-def preprocess_text(text):
-    """Process text using spaCy for better NLP features."""
-    doc = nlp(text)
-    # Keep only nouns, verbs, adjectives and adverbs
-    tokens = [token.lemma_ for token in doc if token.pos_ in ('NOUN', 'VERB', 'ADJ', 'ADV') and not token.is_stop]
-    return " ".join(tokens)
-
-def train():
-    """Train the AI model on the sample data."""
-    # Extract features and labels
-    texts = [item[0] for item in TRAINING_DATA]
-    labels = [item[1] for item in TRAINING_DATA]
+def find_most_similar_query(user_text):
+    """Find the most similar query in our training data using simple word matching."""
+    user_words = set(user_text.lower().split())
     
-    # Create a pipeline with TF-IDF and Naive Bayes
-    pipeline = Pipeline([
-        ('tfidf', TfidfVectorizer(preprocessor=preprocess_text)),
-        ('clf', MultinomialNB())
-    ])
+    best_match = None
+    highest_score = 0
     
-    # Train the model
-    pipeline.fit(texts, labels)
+    for query, intent in TRAINING_DATA:
+        query_words = set(query.lower().split())
+        # Calculate a simple similarity score based on word overlap
+        common_words = user_words.intersection(query_words)
+        score = len(common_words) / (len(user_words) + len(query_words) - len(common_words))
+        
+        if score > highest_score:
+            highest_score = score
+            best_match = intent
     
-    # Save the model
-    with open(MODEL_PATH, 'wb') as f:
-        pickle.dump(pipeline, f)
+    # Return a default intent if no good match is found
+    if highest_score < 0.2:
+        return "help"
     
-    logger.info("Model trained and saved successfully")
-    return pipeline
-
-def load_model():
-    """Load the trained model or train a new one if it doesn't exist."""
-    if MODEL_PATH.exists():
-        try:
-            with open(MODEL_PATH, 'rb') as f:
-                return pickle.load(f)
-        except (pickle.UnpicklingError, EOFError):
-            logger.warning("Error loading model. Training a new one.")
-            return train()
-    else:
-        logger.info("Model not found. Training a new one.")
-        return train()
+    return best_match
 
 def process_message(message):
     """Process a user message and return an appropriate response."""
-    # Load the model
-    model = load_model()
+    logger.info(f"Processing message: {message}")
     
-    # Predict the intent
-    intent = model.predict([message])[0]
-    
-    # Get probabilities to check confidence
-    proba = model.predict_proba([message])[0]
-    max_proba = max(proba)
-    
-    # If confidence is low, return a generic response
-    if max_proba < 0.3:
-        return "I'm not sure I understand your request. Could you provide more details about what you need help with in your DevOps workflow?"
-    
-    # Return the appropriate response based on intent
-    return RESPONSES.get(intent, "I'm still learning about DevOps integration. Could you try rephrasing your question?")
+    try:
+        # Find the most similar query and get its intent
+        intent = find_most_similar_query(message)
+        
+        # Get the response for this intent
+        response = RESPONSES.get(intent, "I'm still learning about DevOps integration. Could you try rephrasing your question?")
+        
+        # Log what we're returning
+        logger.info(f"Responding with intent: {intent}")
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error processing message: {str(e)}")
+        return "I'm having trouble understanding your request right now. Could you try again with different wording?"
 
 if __name__ == "__main__":
-    # Train the model if run directly
-    train()
+    # Test the model if run directly
+    test_message = "How can I create a GitHub repository?"
+    print(f"Test message: {test_message}")
+    print(f"Response: {process_message(test_message)}")
