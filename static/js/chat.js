@@ -2,6 +2,13 @@ document.addEventListener('DOMContentLoaded', function() {
     const chatContainer = document.getElementById('top-chat-container');
     const messageInput = document.getElementById('message-input');
     const sendButton = document.getElementById('send-button');
+    
+    // Check if chat elements exist on this page
+    if (!chatContainer || !messageInput) {
+        console.log('Chat interface not found on this page');
+        return; // Exit early if chat interface is not on this page
+    }
+    
     const typingIndicator = document.createElement('div');
     
     // Set up typing indicator
@@ -100,15 +107,19 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Event listeners
-    sendButton.addEventListener('click', sendMessage);
+    // Event listeners - only add if elements exist
+    if (sendButton) {
+        sendButton.addEventListener('click', sendMessage);
+    }
     
-    messageInput.addEventListener('keypress', function(event) {
-        if (event.key === 'Enter') {
-            event.preventDefault();
-            sendMessage();
-        }
-    });
+    if (messageInput) {
+        messageInput.addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                sendMessage();
+            }
+        });
+    }
     
     // Load chat history
     function loadChatHistory() {

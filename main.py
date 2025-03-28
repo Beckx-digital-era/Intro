@@ -19,16 +19,16 @@ except ImportError:
 except Exception as e:
     logger.error(f"Error registering GitLab routes: {str(e)}")
 
-# Try to import OpenAI DevOps Controller
+# Try to import DevOps AI Controller
 try:
-    from openai_devops_controller import register_openai_routes, initialize as initialize_openai
-    register_openai_routes(app)
-    initialize_openai()
-    logger.info("OpenAI DevOps Controller initialized successfully")
+    from openai_devops_controller import register_devops_routes, initialize as initialize_ai
+    register_devops_routes(app)
+    initialize_ai()
+    logger.info("DevOps AI Controller initialized successfully")
 except ImportError:
     logger.warning("Could not import openai_devops_controller")
 except Exception as e:
-    logger.error(f"Error initializing OpenAI DevOps Controller: {str(e)}")
+    logger.error(f"Error initializing DevOps AI Controller: {str(e)}")
 
 # Initialize database if needed
 with app.app_context():
@@ -50,17 +50,11 @@ if os.environ.get("GITLAB_TOKEN"):
 else:
     logger.warning("GitLab token not found in environment variables")
 
-# Check if OpenAI token is available
-if os.environ.get("OPENAI_API_KEY"):
-    logger.info("OpenAI API key found in environment variables")
-else:
-    logger.warning("OpenAI API key not found in environment variables")
-
 # Print startup message with GitHub integration info
 logger.info("=" * 80)
-logger.info("DevOps System - Powered by OpenAI")
+logger.info("DevOps System - Powered by AI")
 logger.info("=" * 80)
-logger.info("OpenAI-powered DevOps Controller provides intelligent orchestration")
+logger.info("AI-powered DevOps Controller provides intelligent orchestration")
 logger.info("All GitLab operations are controlled through GitHub Actions workflows")
 logger.info("GitHub Pages serves as the control interface")
 logger.info("GitLab is used for CI/CD pipeline execution")
